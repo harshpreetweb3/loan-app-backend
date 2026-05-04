@@ -1,0 +1,69 @@
+import Loan from '../models/Loan.js';
+import Payment from '../models/Payment.js';
+import { generateReceiptPdf } from '../services/pdfService.js';
+import { buildChanges, writeAudit } from '../utils/audit.js';
+import { asyncHandler } from '../utils/asyncHandler.js';
+import { refreshLoanTotals } from '../utils/loanCalculator.js';
+
+export const createPayment = asyncHandler(async (req, res) => {
+  const { loanId, installmentIds = [], mode, notes } = req.body;
+  const loan = await Loan.findById(loanId).populate('borrower');
+  if (!loan) return res.status(404).json({ message: 'Loan not found' });
+
+  const selected = loan.installments.filter((item) => installmentIds.includes(String(item._id)) && item.status !== 'paid');
+  if (!selected.length) return res.status(400).json({ message: 'Select at least one unpaid installment' });
+
+  const amount = selected.reduce((sum, item) => sum + Math.max(item.amount + (item.penaltyAmount || 0) - (item.paidAmount || 0), 0), 0);
+  selected.forEach((item) => {
+    item.paidAmount = item.amount + (item.penaltyAmount || 0);
+    item.status = 'paid';
+    item.paidAt = new Date();
+  });
+  refreshLoanTotals(loan);
+  await loan.save();
+
+  const payment = await Payment.create({
+    borrower: loan.borrower._id,
+    loan: loan._id,
+    amount,
+    mode,
+    installmentIds,
+    collectedBy: req.user._id,
+    notes
+  });
+
+  res.status(201).json({ payment, loan });
+});
+
+export const listPayments = asyncHandler(async (req, res) => {
+  const query = {};
+  if (req.query.scope === 'mine') query.collectedBy = req.user._id;
+  const payments = await Payment.find(query)
+    .populate('borrower')
+    .populate('loan')
+    .populate('collectedBy', 'name username')
+    .sort({ createdAt: -1 });
+  res.json({ payments });
+});
+
+export const updatePayment = asyncHandler(async (req, res) => {
+  const payment = await Payment.findById(req.params.id);
+  if (!payment) return res.status(404).json({ message: 'Payment not found' });
+  const fields = ['mode', 'notes'];
+  const changes = buildChanges(payment, req.body, fields);
+  fields.forEach((field) => {
+    if (req.body[field] !== undefined) payment[field] = req.body[field];
+  });
+  await payment.save();
+  await writeAudit({ entity: 'Payment', entityId: payment._id, action: 'admin_update', changes, admin: req.user._id });
+  res.json({ payment });
+});
+
+export const generateReceipt = asyncHandler(async (req, res) => {
+  const payment = await Payment.findById(req.params.id).populate('loan').populate('borrower');
+  if (!payment) return res.status(404).json({ message: 'Payment not found' });
+  const filePath = await generateReceiptPdf({ payment, loan: payment.loan, borrower: payment.borrower });
+  payment.receiptPath = filePath;
+  await payment.save();
+  res.json({ filePath, payment });
+});

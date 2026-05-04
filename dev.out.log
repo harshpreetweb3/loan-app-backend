@@ -1,0 +1,6 @@
+
+> loan-management-backend@1.0.0 start
+> node src/server.js
+
+MongoDB connected
+Loan API running on port 5000
