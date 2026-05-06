@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { INSTALLMENT_TYPES, NOC_STATUS } from '../constants.js';
+import { INSTALLMENT_TYPES, LOAN_CATEGORIES, NOC_STATUS } from '../constants.js';
 
 const installmentSchema = new mongoose.Schema(
   {
@@ -17,19 +17,29 @@ const installmentSchema = new mongoose.Schema(
 const loanSchema = new mongoose.Schema(
   {
     borrower: { type: mongoose.Schema.Types.ObjectId, ref: 'Borrower', required: true },
+    loanCategory: { type: String, enum: LOAN_CATEGORIES, default: 'personal' },
     loanAmount: { type: Number, required: true, min: 1 },
     interestPercent: { type: Number, required: true, min: 0 },
+    interestAmount: { type: Number, default: 0 },
     duration: { type: Number, required: true, min: 1 },
     installmentType: { type: String, enum: INSTALLMENT_TYPES, required: true },
     installmentAmount: { type: Number, required: true },
     processingCharges: { type: Number, default: 0 },
     startDate: { type: Date, required: true },
+    dateOfFinance: { type: Date, default: Date.now },
+    dueDayOfMonth: { type: Number, min: 1, max: 31 },
+    installmentCountMode: { type: String, enum: ['auto', 'manual'], default: 'auto' },
     totalPayable: { type: Number, required: true },
     totalPaid: { type: Number, default: 0 },
     totalInstallments: { type: Number, required: true },
     paidInstallments: { type: Number, default: 0 },
     remainingInstallments: { type: Number, required: true },
     status: { type: String, enum: ['active', 'completed', 'defaulted'], default: 'active' },
+    receipt: {
+      receiptNumber: { type: String, unique: true, sparse: true },
+      filePath: String,
+      generatedAt: Date
+    },
     installments: [installmentSchema],
     noc: {
       status: { type: String, enum: NOC_STATUS, default: 'none' },

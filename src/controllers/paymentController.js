@@ -38,12 +38,23 @@ export const createPayment = asyncHandler(async (req, res) => {
 export const listPayments = asyncHandler(async (req, res) => {
   const query = {};
   if (req.query.scope === 'mine') query.collectedBy = req.user._id;
+  if (req.query.agent) query.collectedBy = req.query.agent;
+  if (req.query.borrower) query.borrower = req.query.borrower;
+  if (req.query.mode) query.mode = req.query.mode;
+  if (req.query.from || req.query.to) {
+    query.createdAt = {};
+    if (req.query.from) query.createdAt.$gte = new Date(req.query.from);
+    if (req.query.to) query.createdAt.$lte = new Date(req.query.to);
+  }
   const payments = await Payment.find(query)
     .populate('borrower')
     .populate('loan')
     .populate('collectedBy', 'name username')
     .sort({ createdAt: -1 });
-  res.json({ payments });
+  const filtered = req.query.borrowerName
+    ? payments.filter((payment) => payment.borrower?.name?.toLowerCase().includes(String(req.query.borrowerName).toLowerCase()))
+    : payments;
+  res.json({ payments: filtered });
 });
 
 export const updatePayment = asyncHandler(async (req, res) => {

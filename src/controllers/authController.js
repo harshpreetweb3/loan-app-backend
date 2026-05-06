@@ -1,4 +1,6 @@
 import { ROLES } from '../constants.js';
+import Loan from '../models/Loan.js';
+import Payment from '../models/Payment.js';
 import User from '../models/User.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { signToken } from '../utils/token.js';
@@ -26,7 +28,18 @@ export const createAgent = asyncHandler(async (req, res) => {
   res.status(201).json({ agent: userPayload(agent) });
 });
 
-export const listAgents = asyncHandler(async (_req, res) => {
-  const agents = await User.find({ role: ROLES.AGENT }).select('-password').sort({ createdAt: -1 });
-  res.json({ agents });
+export const listAgents = asyncHandler(async (req, res) => {
+  const query = { role: ROLES.AGENT };
+  if (req.query.name) query.name = { $regex: req.query.name, $options: 'i' };
+  const agents = await User.find(query).select('-password').sort({ createdAt: -1 });
+  const withActivity = await Promise.all(
+    agents.map(async (agent) => {
+      const [loansCreated, collections] = await Promise.all([
+        Loan.countDocuments({ createdBy: agent._id }),
+        Payment.aggregate([{ $match: { collectedBy: agent._id } }, { $group: { _id: null, amount: { $sum: '$amount' }, count: { $sum: 1 } } }])
+      ]);
+      return { ...agent.toObject(), loansCreated, collectionCount: collections[0]?.count || 0, collectionAmount: collections[0]?.amount || 0 };
+    })
+  );
+  res.json({ agents: withActivity });
 });

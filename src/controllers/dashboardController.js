@@ -22,7 +22,7 @@ export const getDashboard = asyncHandler(async (req, res) => {
   const isAdmin = req.user.role === 'admin';
   const owned = isAdmin ? {} : { createdBy: req.user._id };
 
-  const [totalBorrowers, totalLoans, overdueLoans, todaysDue, myCollections] = await Promise.all([
+  const [totalBorrowers, totalLoans, overdueLoans, todaysDue, myCollections, dailyDueLoans, recentPayments] = await Promise.all([
     Borrower.countDocuments(owned),
     Loan.countDocuments(owned),
     Loan.countDocuments({ ...owned, 'installments.dueDate': { $lt: now }, 'installments.status': { $in: ['pending', 'partial', 'overdue'] } }),
@@ -30,7 +30,13 @@ export const getDashboard = asyncHandler(async (req, res) => {
     Payment.aggregate([
       { $match: { collectedBy: req.user._id, createdAt: { $gte: todayStart, $lte: todayEnd } } },
       { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
-    ])
+    ]),
+    Loan.find({ ...owned, 'installments.dueDate': { $gte: todayStart, $lte: todayEnd }, 'installments.status': { $in: ['pending', 'partial'] } })
+      .populate('borrower')
+      .populate('createdBy', 'name username')
+      .limit(20)
+      .sort({ createdAt: -1 }),
+    Payment.find(isAdmin ? {} : { collectedBy: req.user._id }).populate('borrower').populate('collectedBy', 'name username').sort({ createdAt: -1 }).limit(10)
   ]);
 
   res.json({
@@ -41,6 +47,11 @@ export const getDashboard = asyncHandler(async (req, res) => {
       todaysDue,
       myCollections: myCollections[0]?.total || 0,
       myCollectionCount: myCollections[0]?.count || 0
-    }
+    },
+    dailyDues: dailyDueLoans.map((loan) => ({
+      loan,
+      dueInstallments: loan.installments.filter((item) => item.dueDate >= todayStart && item.dueDate <= todayEnd && ['pending', 'partial'].includes(item.status))
+    })),
+    recentPayments
   });
 });

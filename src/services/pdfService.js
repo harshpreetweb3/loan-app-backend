@@ -45,6 +45,33 @@ export async function generateReceiptPdf({ payment, loan, borrower }) {
   });
 }
 
+export async function generateLoanReceiptPdf({ loan, borrower }) {
+  const number = loan.receipt?.receiptNumber || loan._id;
+  const filePath = path.join(receiptDir, `loan-receipt-${number}.pdf`);
+  return writeDocument(filePath, (doc) => {
+    doc.fontSize(20).text('Loan Receipt', { align: 'center' }).moveDown();
+    doc.fontSize(11).text(`Receipt Number: ${number}`);
+    doc.text(`Date: ${new Date(loan.createdAt || Date.now()).toLocaleString()}`).moveDown();
+    doc.fontSize(14).text('Borrower Details');
+    doc.fontSize(11).text(`Customer ID: ${borrower.customerId || ''}`);
+    doc.text(`Name: ${borrower.name}`);
+    doc.text(`Mobile: ${(borrower.mobileNumbers || [borrower.phone]).filter(Boolean).join(', ')}`);
+    doc.text(`Address: ${borrower.address}`).moveDown();
+    doc.fontSize(14).text('Loan Details');
+    doc.fontSize(11).text(`Loan Type: ${loan.loanCategory}`);
+    doc.text(`Installment Type: ${loan.installmentType}`);
+    doc.text(`Loan Amount: ${money(loan.loanAmount)}`);
+    doc.text(`Processing Charges: ${money(loan.processingCharges)}`);
+    doc.text(`Interest: ${loan.interestPercent}% (${money(loan.interestAmount)})`);
+    doc.text(`Total Amount: ${money(loan.totalPayable)}`);
+    doc.text(`Installment Amount: ${money(loan.installmentAmount)}`).moveDown();
+    doc.fontSize(14).text('Installment Plan');
+    loan.installments.forEach((item) => {
+      doc.fontSize(9).text(`#${item.sequence} | Due: ${new Date(item.dueDate).toLocaleDateString()} | Amount: ${money(item.amount)}`);
+    });
+  });
+}
+
 export async function generateNocPdf({ loan, borrower }) {
   const filePath = path.join(nocDir, `noc-${loan._id}.pdf`);
   return writeDocument(filePath, (doc) => {
