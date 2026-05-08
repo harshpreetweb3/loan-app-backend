@@ -1,0 +1,25 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/**/*.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/cron/daily-due-check",
+      "dest": "/api/cron/daily-due-check.js"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/api/index.js"
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/daily-due-check",
+      "schedule": "5 0 * * *"
+    }
+  ]
+}
