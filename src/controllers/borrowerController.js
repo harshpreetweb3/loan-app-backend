@@ -29,8 +29,37 @@ function normalizeBorrowerPayload(req) {
   return payload;
 }
 
+function isBlank(value) {
+  return value === undefined || value === null || String(value).trim() === '';
+}
+
+function validateBorrowerPayload(payload, { requirePhoto = false } = {}) {
+  const errors = [];
+  const mobileNumbers = (payload.mobileNumbers || []).filter(Boolean);
+
+  if (isBlank(payload.name)) errors.push('Borrower name is required');
+  if (isBlank(payload.address)) errors.push('Borrower address is required');
+  if (!mobileNumbers.length) errors.push('At least one mobile number is required');
+  if (mobileNumbers.some((number) => !/^[6-9]\d{9}$/.test(String(number)))) errors.push('Enter valid 10 digit mobile numbers');
+  if (requirePhoto && isBlank(payload.photoPath)) errors.push('Borrower photo is required. Capture a photo or upload a passport size image');
+  if (isBlank(payload.guarantor?.name)) errors.push('Guarantor name is required');
+  if (isBlank(payload.guarantor?.phone)) errors.push('Guarantor phone number is required');
+  if (payload.guarantor?.phone && !/^[6-9]\d{9}$/.test(String(payload.guarantor.phone))) errors.push('Enter a valid 10 digit guarantor phone number');
+  if (isBlank(payload.guarantor?.address)) errors.push('Guarantor address is required');
+
+  if (payload.loanCategory === 'vehicle') {
+    if (isBlank(payload.vehicle?.nameOnRc)) errors.push('Name on RC is required for vehicle loans');
+    if (isBlank(payload.vehicle?.rcRegisteredNumber)) errors.push('RC registered number is required for vehicle loans');
+    if (isBlank(payload.vehicle?.modelNumber)) errors.push('Vehicle model number is required for vehicle loans');
+  }
+
+  return errors;
+}
+
 export const createBorrower = asyncHandler(async (req, res) => {
   const payload = normalizeBorrowerPayload(req);
+  const errors = validateBorrowerPayload(payload, { requirePhoto: true });
+  if (errors.length) return res.status(400).json({ message: errors[0], errors });
   const borrower = await Borrower.create({ ...payload, customerId: await nextSequence('customer', 'CUST-'), createdBy: req.user._id });
   res.status(201).json({ borrower });
 });
@@ -68,6 +97,9 @@ export const updateBorrower = asyncHandler(async (req, res) => {
   const borrower = await Borrower.findById(req.params.id);
   if (!borrower) return res.status(404).json({ message: 'Borrower not found' });
   const payload = normalizeBorrowerPayload(req);
+  const nextPayload = { ...borrower.toObject(), ...payload };
+  const errors = validateBorrowerPayload(nextPayload);
+  if (errors.length) return res.status(400).json({ message: errors[0], errors });
   const fields = ['name', 'fatherOrCareOf', 'address', 'phone', 'mobileNumbers', 'photoPath', 'loanCategory', 'guarantor', 'vehicle', 'bank'];
   const changes = buildChanges(borrower, payload, fields);
   fields.forEach((field) => {
@@ -76,4 +108,28 @@ export const updateBorrower = asyncHandler(async (req, res) => {
   await borrower.save();
   await writeAudit({ entity: 'Borrower', entityId: borrower._id, action: 'admin_update', changes, admin: req.user._id });
   res.json({ borrower });
+});
+
+export const deleteBorrower = asyncHandler(async (req, res) => {
+  const borrower = await Borrower.findById(req.params.id);
+  if (!borrower) return res.status(404).json({ message: 'Borrower not found' });
+
+  const [loansDeleted, paymentsDeleted, notesDeleted] = await Promise.all([
+    Loan.deleteMany({ borrower: borrower._id }),
+    Payment.deleteMany({ borrower: borrower._id }),
+    CallNote.deleteMany({ borrower: borrower._id })
+  ]);
+
+  await borrower.deleteOne();
+  await writeAudit({
+    entity: 'Borrower',
+    entityId: borrower._id,
+    action: 'admin_delete',
+    changes: [
+      { field: 'borrower', from: borrower.name, to: 'deleted' },
+      { field: 'relatedRecords', from: '', to: `loans:${loansDeleted.deletedCount}, payments:${paymentsDeleted.deletedCount}, notes:${notesDeleted.deletedCount}` }
+    ],
+    admin: req.user._id
+  });
+  res.json({ message: 'Borrower deleted' });
 });

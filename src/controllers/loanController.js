@@ -1,22 +1,44 @@
 import Loan from '../models/Loan.js';
+import Borrower from '../models/Borrower.js';
 import { buildChanges, writeAudit } from '../utils/audit.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { calculateLoanSchedule } from '../utils/loanCalculator.js';
 import { generateLoanReceiptPdf, generateNocPdf } from '../services/pdfService.js';
 import { nextSequence } from '../utils/sequence.js';
 
+function numberValue(value) {
+  return Number(value);
+}
+
+function validateLoanPayload(payload) {
+  const errors = [];
+  if (!payload.borrower) errors.push('Borrower is required');
+  if (!numberValue(payload.loanAmount) || numberValue(payload.loanAmount) <= 0) errors.push('Loan amount is required');
+  if (payload.interestPercent === undefined || payload.interestPercent === '' || numberValue(payload.interestPercent) < 0) errors.push('Interest percentage is required');
+  if (!numberValue(payload.duration) || numberValue(payload.duration) <= 0) errors.push('Number of installments is required');
+  if (!['daily', 'monthly'].includes(payload.installmentType)) errors.push('Installment type is required');
+  if (!payload.startDate && !payload.dateOfFinance) errors.push('Finance date is required');
+  if (payload.installmentType === 'monthly' && (numberValue(payload.dueDayOfMonth) < 1 || numberValue(payload.dueDayOfMonth) > 31)) errors.push('Due day must be between 1 and 31');
+  return errors;
+}
+
 export const createLoan = asyncHandler(async (req, res) => {
-  const schedule = calculateLoanSchedule(req.body);
+  const borrower = await Borrower.findById(req.body.borrower);
+  if (!borrower) return res.status(404).json({ message: 'Borrower not found' });
+  const payload = { ...req.body, loanCategory: borrower.loanCategory, installmentCountMode: 'manual' };
+  const errors = validateLoanPayload(payload);
+  if (errors.length) return res.status(400).json({ message: errors[0], errors });
+  const schedule = calculateLoanSchedule(payload);
   const receiptNumber = await nextSequence('loanReceipt', 'LR-');
   const loan = await Loan.create({
-    ...req.body,
+    ...payload,
     ...schedule,
-    dateOfFinance: req.body.dateOfFinance || req.body.startDate || new Date(),
+    dateOfFinance: payload.dateOfFinance || payload.startDate || new Date(),
     receipt: { receiptNumber, generatedAt: new Date() },
     createdBy: req.user._id
   });
-  await loan.populate('borrower');
-  loan.receipt.filePath = await generateLoanReceiptPdf({ loan, borrower: loan.borrower });
+  loan.borrower = borrower;
+  loan.receipt.filePath = await generateLoanReceiptPdf({ loan, borrower });
   await loan.save();
   res.status(201).json({ loan });
 });
@@ -52,12 +74,14 @@ export const getLoan = asyncHandler(async (req, res) => {
 export const updateLoan = asyncHandler(async (req, res) => {
   const loan = await Loan.findById(req.params.id);
   if (!loan) return res.status(404).json({ message: 'Loan not found' });
-  const fields = ['loanAmount', 'interestPercent', 'interestAmount', 'duration', 'installmentType', 'processingCharges', 'startDate', 'dateOfFinance', 'dueDayOfMonth', 'loanCategory'];
+  const nextPayload = { ...loan.toObject(), ...req.body, installmentCountMode: 'manual' };
+  const errors = validateLoanPayload(nextPayload);
+  if (errors.length) return res.status(400).json({ message: errors[0], errors });
+  const fields = ['loanAmount', 'interestPercent', 'interestAmount', 'duration', 'installmentType', 'processingCharges', 'startDate', 'dateOfFinance', 'dueDayOfMonth'];
   const changes = buildChanges(loan, req.body, fields);
   if (changes.length) {
-    const next = { ...loan.toObject(), ...req.body };
-    const schedule = calculateLoanSchedule(next);
-    Object.assign(loan, req.body, schedule);
+    const schedule = calculateLoanSchedule(nextPayload);
+    Object.assign(loan, req.body, { installmentCountMode: 'manual' }, schedule);
   }
   await loan.save();
   await writeAudit({ entity: 'Loan', entityId: loan._id, action: 'admin_update', changes, admin: req.user._id });

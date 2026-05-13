@@ -28,7 +28,7 @@ const loanSchema = new mongoose.Schema(
     startDate: { type: Date, required: true },
     dateOfFinance: { type: Date, default: Date.now },
     dueDayOfMonth: { type: Number, min: 1, max: 31 },
-    installmentCountMode: { type: String, enum: ['auto', 'manual'], default: 'auto' },
+    installmentCountMode: { type: String, enum: ['manual'], default: 'manual' },
     totalPayable: { type: Number, required: true },
     totalPaid: { type: Number, default: 0 },
     totalInstallments: { type: Number, required: true },
