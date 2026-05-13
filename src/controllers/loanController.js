@@ -3,7 +3,7 @@ import Borrower from '../models/Borrower.js';
 import { buildChanges, writeAudit } from '../utils/audit.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { calculateLoanSchedule } from '../utils/loanCalculator.js';
-import { generateLoanReceiptPdf, generateNocPdf } from '../services/pdfService.js';
+import { generateLoanReceiptBuffer, generateNocPdf } from '../services/pdfService.js';
 import { nextSequence } from '../utils/sequence.js';
 
 function numberValue(value) {
@@ -37,9 +37,6 @@ export const createLoan = asyncHandler(async (req, res) => {
     receipt: { receiptNumber, generatedAt: new Date() },
     createdBy: req.user._id
   });
-  loan.borrower = borrower;
-  loan.receipt.filePath = await generateLoanReceiptPdf({ loan, borrower });
-  await loan.save();
   res.status(201).json({ loan });
 });
 
@@ -89,22 +86,29 @@ export const updateLoan = asyncHandler(async (req, res) => {
 });
 
 export const generateLoanReceipt = asyncHandler(async (req, res) => {
-  const loan = await Loan.findById(req.params.id).populate('borrower');
+  const loan = await Loan.findById(req.params.id).populate('borrower').populate('createdBy', 'name username');
   if (!loan) return res.status(404).json({ message: 'Loan not found' });
   if (!loan.receipt?.receiptNumber) loan.receipt.receiptNumber = await nextSequence('loanReceipt', 'LR-');
-  loan.receipt.filePath = await generateLoanReceiptPdf({ loan, borrower: loan.borrower });
   loan.receipt.generatedAt = new Date();
   await loan.save();
-  res.json({ filePath: loan.receipt.filePath, loan });
+  const pdf = await generateLoanReceiptBuffer({ loan, borrower: loan.borrower, agent: loan.createdBy });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="loan-receipt-${loan.receipt.receiptNumber}.pdf"`);
+  res.setHeader('Content-Length', pdf.length);
+  res.send(pdf);
 });
 
 export const switchInstallmentType = asyncHandler(async (req, res) => {
   const loan = await Loan.findById(req.params.id);
   if (!loan) return res.status(404).json({ message: 'Loan not found' });
   const installmentType = req.body.installmentType || (loan.installmentType === 'daily' ? 'monthly' : 'daily');
-  const next = { ...loan.toObject(), installmentType };
+  const duration = numberValue(req.body.duration);
+  if (!['daily', 'monthly'].includes(installmentType)) return res.status(400).json({ message: 'Installment type is required' });
+  if (!duration || duration <= 0) return res.status(400).json({ message: 'Redefine the number of installments before switching loan type' });
+  if (installmentType === loan.installmentType) return res.status(400).json({ message: 'Choose a different loan type' });
+  const next = { ...loan.toObject(), installmentType, duration };
   const schedule = calculateLoanSchedule(next);
-  Object.assign(loan, { installmentType }, schedule);
+  Object.assign(loan, { installmentType, duration, installmentCountMode: 'manual' }, schedule);
   await loan.save();
   res.json({ loan });
 });

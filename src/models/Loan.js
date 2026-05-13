@@ -37,7 +37,6 @@ const loanSchema = new mongoose.Schema(
     status: { type: String, enum: ['active', 'completed', 'defaulted'], default: 'active' },
     receipt: {
       receiptNumber: { type: String, unique: true, sparse: true },
-      filePath: String,
       generatedAt: Date
     },
     installments: [installmentSchema],

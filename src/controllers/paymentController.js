@@ -1,6 +1,6 @@
 import Loan from '../models/Loan.js';
 import Payment from '../models/Payment.js';
-import { generateReceiptPdf } from '../services/pdfService.js';
+import { generatePaymentReceiptBuffer } from '../services/pdfService.js';
 import { buildChanges, writeAudit } from '../utils/audit.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { refreshLoanTotals } from '../utils/loanCalculator.js';
@@ -73,8 +73,9 @@ export const updatePayment = asyncHandler(async (req, res) => {
 export const generateReceipt = asyncHandler(async (req, res) => {
   const payment = await Payment.findById(req.params.id).populate('loan').populate('borrower');
   if (!payment) return res.status(404).json({ message: 'Payment not found' });
-  const filePath = await generateReceiptPdf({ payment, loan: payment.loan, borrower: payment.borrower });
-  payment.receiptPath = filePath;
-  await payment.save();
-  res.json({ filePath, payment });
+  const pdf = await generatePaymentReceiptBuffer({ payment, loan: payment.loan, borrower: payment.borrower });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="payment-receipt-${payment._id}.pdf"`);
+  res.setHeader('Content-Length', pdf.length);
+  res.send(pdf);
 });

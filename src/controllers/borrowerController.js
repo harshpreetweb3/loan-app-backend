@@ -46,6 +46,9 @@ function validateBorrowerPayload(payload, { requirePhoto = false } = {}) {
   if (isBlank(payload.guarantor?.phone)) errors.push('Guarantor phone number is required');
   if (payload.guarantor?.phone && !/^[6-9]\d{9}$/.test(String(payload.guarantor.phone))) errors.push('Enter a valid 10 digit guarantor phone number');
   if (isBlank(payload.guarantor?.address)) errors.push('Guarantor address is required');
+  if (isBlank(payload.bank?.bankName)) errors.push('Bank name is required');
+  if (isBlank(payload.bank?.accountNumber)) errors.push('Account number is required');
+  if (isBlank(payload.bank?.chequeNumber)) errors.push('Cheque number is required');
 
   if (payload.loanCategory === 'vehicle') {
     if (isBlank(payload.vehicle?.nameOnRc)) errors.push('Name on RC is required for vehicle loans');

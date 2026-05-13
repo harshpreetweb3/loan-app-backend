@@ -10,7 +10,6 @@ const paymentSchema = new mongoose.Schema(
     installmentIds: [{ type: mongoose.Schema.Types.ObjectId }],
     collectedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     notes: String,
-    receiptPath: String
   },
   { timestamps: true }
 );
