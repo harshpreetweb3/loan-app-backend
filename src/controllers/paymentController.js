@@ -10,7 +10,7 @@ export const createPayment = asyncHandler(async (req, res) => {
   const loan = await Loan.findById(loanId).populate('borrower');
   if (!loan) return res.status(404).json({ message: 'Loan not found' });
 
-  const selected = loan.installments.filter((item) => installmentIds.includes(String(item._id)) && item.status !== 'paid');
+  const selected = loan.installments.filter((item) => installmentIds.includes(String(item._id)) && item.status !== 'paid' && !item.convertedAt);
   if (!selected.length) return res.status(400).json({ message: 'Select at least one unpaid installment' });
 
   const amount = selected.reduce((sum, item) => sum + Math.max(item.amount + (item.penaltyAmount || 0) - (item.paidAmount || 0), 0), 0);

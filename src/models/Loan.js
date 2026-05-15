@@ -9,7 +9,21 @@ const installmentSchema = new mongoose.Schema(
     paidAmount: { type: Number, default: 0 },
     penaltyAmount: { type: Number, default: 0 },
     status: { type: String, enum: ['pending', 'paid', 'partial', 'overdue'], default: 'pending' },
-    paidAt: Date
+    paidAt: Date,
+    convertedAt: Date
+  },
+  { _id: true }
+);
+
+const conversionHistorySchema = new mongoose.Schema(
+  {
+    oldType: { type: String, enum: INSTALLMENT_TYPES, required: true },
+    newType: { type: String, enum: INSTALLMENT_TYPES, required: true },
+    oldInstallments: { type: Number, required: true },
+    newInstallments: { type: Number, required: true },
+    conversionDate: { type: Date, default: Date.now },
+    remainingAmount: { type: Number, required: true },
+    convertedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true }
   },
   { _id: true }
 );
@@ -40,6 +54,7 @@ const loanSchema = new mongoose.Schema(
       generatedAt: Date
     },
     installments: [installmentSchema],
+    conversionHistory: [conversionHistorySchema],
     noc: {
       status: { type: String, enum: NOC_STATUS, default: 'none' },
       requestedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },

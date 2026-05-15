@@ -2,7 +2,7 @@ import Loan from '../models/Loan.js';
 import Borrower from '../models/Borrower.js';
 import { buildChanges, writeAudit } from '../utils/audit.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
-import { calculateLoanSchedule } from '../utils/loanCalculator.js';
+import { buildInstallmentSchedule, calculateLoanSchedule, refreshLoanTotals } from '../utils/loanCalculator.js';
 import { generateLoanReceiptBuffer, generateNocPdf } from '../services/pdfService.js';
 import { nextSequence } from '../utils/sequence.js';
 
@@ -55,6 +55,7 @@ export const listLoans = asyncHandler(async (req, res) => {
   const loans = await Loan.find(query)
     .populate('borrower')
     .populate('createdBy', 'name username')
+    .populate('conversionHistory.convertedBy', 'name username role')
     .sort({ createdAt: -1 });
   const filtered = req.query.borrowerName
     ? loans.filter((loan) => loan.borrower?.name?.toLowerCase().includes(String(req.query.borrowerName).toLowerCase()))
@@ -63,7 +64,10 @@ export const listLoans = asyncHandler(async (req, res) => {
 });
 
 export const getLoan = asyncHandler(async (req, res) => {
-  const loan = await Loan.findById(req.params.id).populate('borrower').populate('createdBy', 'name username');
+  const loan = await Loan.findById(req.params.id)
+    .populate('borrower')
+    .populate('createdBy', 'name username')
+    .populate('conversionHistory.convertedBy', 'name username role');
   if (!loan) return res.status(404).json({ message: 'Loan not found' });
   res.json({ loan });
 });
@@ -106,10 +110,62 @@ export const switchInstallmentType = asyncHandler(async (req, res) => {
   if (!['daily', 'monthly'].includes(installmentType)) return res.status(400).json({ message: 'Installment type is required' });
   if (!duration || duration <= 0) return res.status(400).json({ message: 'Redefine the number of installments before switching loan type' });
   if (installmentType === loan.installmentType) return res.status(400).json({ message: 'Choose a different loan type' });
-  const next = { ...loan.toObject(), installmentType, duration };
-  const schedule = calculateLoanSchedule(next);
-  Object.assign(loan, { installmentType, duration, installmentCountMode: 'manual' }, schedule);
+
+  const convertedAt = new Date();
+  const oldType = loan.installmentType;
+  const oldInstallments = loan.totalInstallments;
+  const paidAmount = Math.round(loan.installments.reduce((sum, item) => sum + (item.paidAmount || 0), 0) * 100) / 100;
+  const remainingAmount = Math.max(Math.round((loan.totalPayable - paidAmount) * 100) / 100, 0);
+  if (remainingAmount <= 0) return res.status(400).json({ message: 'Loan has no remaining amount to convert' });
+
+  const retainedInstallments = loan.installments
+    .filter((item) => item.status === 'paid' || (item.paidAmount || 0) > 0)
+    .map((item) => {
+      if (item.status !== 'paid') item.convertedAt = convertedAt;
+      return item;
+    });
+  const sequenceStart = retainedInstallments.length
+    ? Math.max(...retainedInstallments.map((item) => Number(item.sequence || 0))) + 1
+    : 1;
+  const schedule = buildInstallmentSchedule({
+    totalPayable: remainingAmount,
+    duration,
+    installmentType,
+    startDate: req.body.startDate || convertedAt,
+    dueDayOfMonth: req.body.dueDayOfMonth || loan.dueDayOfMonth,
+    sequenceStart
+  });
+
+  loan.installmentType = installmentType;
+  loan.duration = duration;
+  loan.installmentCountMode = 'manual';
+  loan.installmentAmount = schedule.installmentAmount;
+  loan.totalInstallments = retainedInstallments.filter((item) => !item.convertedAt).length + duration;
+  loan.remainingInstallments = duration;
+  loan.installments = [...retainedInstallments, ...schedule.installments];
+  if (req.body.dueDayOfMonth !== undefined) loan.dueDayOfMonth = req.body.dueDayOfMonth;
+  loan.conversionHistory.push({
+    oldType,
+    newType: installmentType,
+    oldInstallments,
+    newInstallments: duration,
+    conversionDate: convertedAt,
+    remainingAmount,
+    convertedBy: req.user._id
+  });
+  refreshLoanTotals(loan);
   await loan.save();
+  await writeAudit({
+    entity: 'Loan',
+    entityId: loan._id,
+    action: 'loan_conversion',
+    admin: req.user._id,
+    changes: [
+      { field: 'installmentType', oldValue: oldType, newValue: installmentType },
+      { field: 'remainingAmount', oldValue: loan.totalPayable, newValue: remainingAmount },
+      { field: 'duration', oldValue: oldInstallments, newValue: duration }
+    ]
+  });
   res.json({ loan });
 });
 

@@ -43,6 +43,7 @@ function validateBorrowerPayload(payload, { requirePhoto = false } = {}) {
   if (mobileNumbers.some((number) => !/^[6-9]\d{9}$/.test(String(number)))) errors.push('Enter valid 10 digit mobile numbers');
   if (requirePhoto && isBlank(payload.photoPath)) errors.push('Borrower photo is required. Capture a photo or upload a passport size image');
   if (isBlank(payload.guarantor?.name)) errors.push('Guarantor name is required');
+  if (isBlank(payload.guarantor?.fatherName)) errors.push('Guarantor father name is required');
   if (isBlank(payload.guarantor?.phone)) errors.push('Guarantor phone number is required');
   if (payload.guarantor?.phone && !/^[6-9]\d{9}$/.test(String(payload.guarantor.phone))) errors.push('Enter a valid 10 digit guarantor phone number');
   if (isBlank(payload.guarantor?.address)) errors.push('Guarantor address is required');
