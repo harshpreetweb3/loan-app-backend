@@ -32,6 +32,14 @@ const loanSchema = new mongoose.Schema(
   {
     borrower: { type: mongoose.Schema.Types.ObjectId, ref: 'Borrower', required: true },
     loanCategory: { type: String, enum: LOAN_CATEGORIES, default: 'personal' },
+    guarantor: {
+      name: String,
+      fatherName: String,
+      phone: String,
+      address: String,
+      proof1Path: String,
+      proof2Path: String
+    },
     loanAmount: { type: Number, required: true, min: 1 },
     interestPercent: { type: Number, required: true, min: 0 },
     interestAmount: { type: Number, default: 0 },

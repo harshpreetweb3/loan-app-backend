@@ -18,6 +18,8 @@ const borrowerSchema = new mongoose.Schema(
       }
     },
     photoPath: String,
+    proof1Path: String,
+    proof2Path: String,
     loanCategory: { type: String, enum: LOAN_CATEGORIES, default: 'personal' },
     guarantor: {
       name: String,

@@ -24,6 +24,8 @@ function normalizeBorrowerPayload(req) {
   payload.vehicle = parseJsonField(payload.vehicle, {});
   payload.bank = parseJsonField(payload.bank, {});
   if (req.files?.photo?.[0]) payload.photoPath = publicPath(req.files.photo[0].path);
+  if (req.files?.proof1?.[0]) payload.proof1Path = publicPath(req.files.proof1[0].path);
+  if (req.files?.proof2?.[0]) payload.proof2Path = publicPath(req.files.proof2[0].path);
   if (req.files?.rcPhoto?.[0]) payload.vehicle = { ...payload.vehicle, rcPhotoPath: publicPath(req.files.rcPhoto[0].path) };
   if (!payload.phone && payload.mobileNumbers?.[0]) payload.phone = payload.mobileNumbers[0];
   return payload;
@@ -42,20 +44,10 @@ function validateBorrowerPayload(payload, { requirePhoto = false } = {}) {
   if (!mobileNumbers.length) errors.push('At least one mobile number is required');
   if (mobileNumbers.some((number) => !/^[6-9]\d{9}$/.test(String(number)))) errors.push('Enter valid 10 digit mobile numbers');
   if (requirePhoto && isBlank(payload.photoPath)) errors.push('Borrower photo is required. Capture a photo or upload a passport size image');
-  if (isBlank(payload.guarantor?.name)) errors.push('Guarantor name is required');
-  if (isBlank(payload.guarantor?.fatherName)) errors.push('Guarantor father name is required');
-  if (isBlank(payload.guarantor?.phone)) errors.push('Guarantor phone number is required');
-  if (payload.guarantor?.phone && !/^[6-9]\d{9}$/.test(String(payload.guarantor.phone))) errors.push('Enter a valid 10 digit guarantor phone number');
-  if (isBlank(payload.guarantor?.address)) errors.push('Guarantor address is required');
+  if (requirePhoto && isBlank(payload.proof1Path)) errors.push('Borrower proof 1 is required');
   if (isBlank(payload.bank?.bankName)) errors.push('Bank name is required');
   if (isBlank(payload.bank?.accountNumber)) errors.push('Account number is required');
   if (isBlank(payload.bank?.chequeNumber)) errors.push('Cheque number is required');
-
-  if (payload.loanCategory === 'vehicle') {
-    if (isBlank(payload.vehicle?.nameOnRc)) errors.push('Name on RC is required for vehicle loans');
-    if (isBlank(payload.vehicle?.rcRegisteredNumber)) errors.push('RC registered number is required for vehicle loans');
-    if (isBlank(payload.vehicle?.modelNumber)) errors.push('Vehicle model number is required for vehicle loans');
-  }
 
   return errors;
 }
@@ -104,7 +96,7 @@ export const updateBorrower = asyncHandler(async (req, res) => {
   const nextPayload = { ...borrower.toObject(), ...payload };
   const errors = validateBorrowerPayload(nextPayload);
   if (errors.length) return res.status(400).json({ message: errors[0], errors });
-  const fields = ['name', 'fatherOrCareOf', 'address', 'phone', 'mobileNumbers', 'photoPath', 'loanCategory', 'guarantor', 'vehicle', 'bank'];
+  const fields = ['name', 'fatherOrCareOf', 'address', 'phone', 'mobileNumbers', 'photoPath', 'proof1Path', 'proof2Path', 'vehicle', 'bank'];
   const changes = buildChanges(borrower, payload, fields);
   fields.forEach((field) => {
     if (payload[field] !== undefined) borrower[field] = payload[field];

@@ -5,6 +5,7 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 import { buildInstallmentSchedule, calculateLoanSchedule, refreshLoanTotals } from '../utils/loanCalculator.js';
 import { generateLoanReceiptBuffer, generateNocPdf } from '../services/pdfService.js';
 import { nextSequence } from '../utils/sequence.js';
+import { publicPath } from '../utils/storage.js';
 
 function numberValue(value) {
   return Number(value);
@@ -13,19 +14,44 @@ function numberValue(value) {
 function validateLoanPayload(payload) {
   const errors = [];
   if (!payload.borrower) errors.push('Borrower is required');
+  if (!['personal', 'vehicle'].includes(payload.loanCategory)) errors.push('Loan type is required');
   if (!numberValue(payload.loanAmount) || numberValue(payload.loanAmount) <= 0) errors.push('Loan amount is required');
   if (payload.interestPercent === undefined || payload.interestPercent === '' || numberValue(payload.interestPercent) < 0) errors.push('Interest percentage is required');
-  if (!numberValue(payload.duration) || numberValue(payload.duration) <= 0) errors.push('Number of installments is required');
+  if (!numberValue(payload.duration) || numberValue(payload.duration) <= 0) errors.push('Duration is required');
   if (!['daily', 'monthly'].includes(payload.installmentType)) errors.push('Installment type is required');
   if (!payload.startDate && !payload.dateOfFinance) errors.push('Finance date is required');
   if (payload.installmentType === 'monthly' && (numberValue(payload.dueDayOfMonth) < 1 || numberValue(payload.dueDayOfMonth) > 31)) errors.push('Due day must be between 1 and 31');
+  if (!payload.guarantor?.name) errors.push('Guarantor name is required');
+  if (!payload.guarantor?.fatherName) errors.push('Guarantor father name is required');
+  if (!/^[6-9]\d{9}$/.test(String(payload.guarantor?.phone || ''))) errors.push('Enter a valid guarantor phone number');
+  if (!payload.guarantor?.address) errors.push('Guarantor address is required');
+  if (!payload.guarantor?.proof1Path) errors.push('Guarantor proof 1 is required');
   return errors;
 }
 
+function parseJsonField(value, fallback) {
+  if (value === undefined) return fallback;
+  if (typeof value !== 'string') return value;
+  try {
+    return JSON.parse(value);
+  } catch (_error) {
+    return fallback;
+  }
+}
+
+function normalizeLoanPayload(req, existing = {}) {
+  const payload = { ...req.body };
+  payload.guarantor = { ...(existing.guarantor || {}), ...parseJsonField(payload.guarantor, {}) };
+  if (req.files?.guarantorProof1?.[0]) payload.guarantor.proof1Path = publicPath(req.files.guarantorProof1[0].path);
+  if (req.files?.guarantorProof2?.[0]) payload.guarantor.proof2Path = publicPath(req.files.guarantorProof2[0].path);
+  return payload;
+}
+
 export const createLoan = asyncHandler(async (req, res) => {
-  const borrower = await Borrower.findById(req.body.borrower);
+  const payload = normalizeLoanPayload(req);
+  const borrower = await Borrower.findById(payload.borrower);
   if (!borrower) return res.status(404).json({ message: 'Borrower not found' });
-  const payload = { ...req.body, loanCategory: borrower.loanCategory, installmentCountMode: 'manual' };
+  payload.installmentCountMode = 'manual';
   const errors = validateLoanPayload(payload);
   if (errors.length) return res.status(400).json({ message: errors[0], errors });
   const schedule = calculateLoanSchedule(payload);
@@ -75,14 +101,15 @@ export const getLoan = asyncHandler(async (req, res) => {
 export const updateLoan = asyncHandler(async (req, res) => {
   const loan = await Loan.findById(req.params.id);
   if (!loan) return res.status(404).json({ message: 'Loan not found' });
-  const nextPayload = { ...loan.toObject(), ...req.body, installmentCountMode: 'manual' };
+  const payload = normalizeLoanPayload(req, loan);
+  const nextPayload = { ...loan.toObject(), ...payload, installmentCountMode: 'manual' };
   const errors = validateLoanPayload(nextPayload);
   if (errors.length) return res.status(400).json({ message: errors[0], errors });
-  const fields = ['loanAmount', 'interestPercent', 'interestAmount', 'duration', 'installmentType', 'processingCharges', 'startDate', 'dateOfFinance', 'dueDayOfMonth'];
-  const changes = buildChanges(loan, req.body, fields);
+  const fields = ['loanAmount', 'interestPercent', 'interestAmount', 'duration', 'installmentType', 'processingCharges', 'startDate', 'dateOfFinance', 'dueDayOfMonth', 'loanCategory', 'guarantor'];
+  const changes = buildChanges(loan, payload, fields);
   if (changes.length) {
     const schedule = calculateLoanSchedule(nextPayload);
-    Object.assign(loan, req.body, { installmentCountMode: 'manual' }, schedule);
+    Object.assign(loan, payload, { installmentCountMode: 'manual' }, schedule);
   }
   await loan.save();
   await writeAudit({ entity: 'Loan', entityId: loan._id, action: 'admin_update', changes, admin: req.user._id });
@@ -106,9 +133,7 @@ export const switchInstallmentType = asyncHandler(async (req, res) => {
   const loan = await Loan.findById(req.params.id);
   if (!loan) return res.status(404).json({ message: 'Loan not found' });
   const installmentType = req.body.installmentType || (loan.installmentType === 'daily' ? 'monthly' : 'daily');
-  const duration = numberValue(req.body.duration);
   if (!['daily', 'monthly'].includes(installmentType)) return res.status(400).json({ message: 'Installment type is required' });
-  if (!duration || duration <= 0) return res.status(400).json({ message: 'Redefine the number of installments before switching loan type' });
   if (installmentType === loan.installmentType) return res.status(400).json({ message: 'Choose a different loan type' });
 
   const convertedAt = new Date();
@@ -117,6 +142,10 @@ export const switchInstallmentType = asyncHandler(async (req, res) => {
   const paidAmount = Math.round(loan.installments.reduce((sum, item) => sum + (item.paidAmount || 0), 0) * 100) / 100;
   const remainingAmount = Math.max(Math.round((loan.totalPayable - paidAmount) * 100) / 100, 0);
   if (remainingAmount <= 0) return res.status(400).json({ message: 'Loan has no remaining amount to convert' });
+  const unpaidActive = loan.installments.filter((item) => item.status !== 'paid' && !item.convertedAt).length;
+  const remainingMonths = loan.installmentType === 'daily' ? unpaidActive / 30 : unpaidActive;
+  const duration = installmentType === 'daily' ? remainingMonths : Math.max(1, Math.ceil(remainingMonths));
+  if (!duration || duration <= 0) return res.status(400).json({ message: 'Loan has no remaining duration to convert' });
 
   const retainedInstallments = loan.installments
     .filter((item) => item.status === 'paid' || (item.paidAmount || 0) > 0)
@@ -140,8 +169,8 @@ export const switchInstallmentType = asyncHandler(async (req, res) => {
   loan.duration = duration;
   loan.installmentCountMode = 'manual';
   loan.installmentAmount = schedule.installmentAmount;
-  loan.totalInstallments = retainedInstallments.filter((item) => !item.convertedAt).length + duration;
-  loan.remainingInstallments = duration;
+  loan.totalInstallments = retainedInstallments.filter((item) => !item.convertedAt).length + schedule.installments.length;
+  loan.remainingInstallments = schedule.installments.length;
   loan.installments = [...retainedInstallments, ...schedule.installments];
   if (req.body.dueDayOfMonth !== undefined) loan.dueDayOfMonth = req.body.dueDayOfMonth;
   loan.conversionHistory.push({

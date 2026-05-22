@@ -9,6 +9,11 @@ const userSchema = new mongoose.Schema(
     password: { type: String, required: true, minlength: 6 },
     role: { type: String, enum: Object.values(ROLES), default: ROLES.AGENT },
     isActive: { type: Boolean, default: true },
+    address: { type: String, trim: true },
+    mobileNumber: { type: String, trim: true },
+    proof1Path: String,
+    proof2Path: String,
+    tempPasswordIssuedAt: Date,
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
   },
   { timestamps: true }

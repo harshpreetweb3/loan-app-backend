@@ -8,6 +8,7 @@ export const createNote = asyncHandler(async (req, res) => {
 
 export const listNotes = asyncHandler(async (req, res) => {
   const query = {};
+  if (req.query.loan) query.loan = req.query.loan;
   if (req.query.borrower) query.borrower = req.query.borrower;
   if (req.query.agent) query.createdBy = req.query.agent;
   if (req.query.from || req.query.to) {

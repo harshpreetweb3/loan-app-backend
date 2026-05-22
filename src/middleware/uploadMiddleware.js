@@ -1,10 +1,13 @@
 import multer from 'multer';
 import path from 'path';
-import { borrowerPhotoDir, rcPhotoDir } from '../utils/storage.js';
+import { agentProofDir, borrowerPhotoDir, proofDir, rcPhotoDir } from '../utils/storage.js';
 
 const storage = multer.diskStorage({
   destination(req, file, cb) {
-    cb(null, file.fieldname === 'rcPhoto' ? rcPhotoDir : borrowerPhotoDir);
+    if (file.fieldname === 'rcPhoto') return cb(null, rcPhotoDir);
+    if (file.fieldname.startsWith('agentProof')) return cb(null, agentProofDir);
+    if (file.fieldname.toLowerCase().includes('proof')) return cb(null, proofDir);
+    cb(null, borrowerPhotoDir);
   },
   filename(req, file, cb) {
     const ext = path.extname(file.originalname || '.jpg');
@@ -16,10 +19,36 @@ export const uploadBorrowerFiles = multer({
   storage,
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter(_req, file, cb) {
-    if (!file.mimetype.startsWith('image/')) return cb(new Error('Only image uploads are allowed'));
+    if (!file.mimetype.startsWith('image/') && file.mimetype !== 'application/pdf') return cb(new Error('Only image or PDF uploads are allowed'));
     cb(null, true);
   }
 }).fields([
   { name: 'photo', maxCount: 1 },
-  { name: 'rcPhoto', maxCount: 1 }
+  { name: 'rcPhoto', maxCount: 1 },
+  { name: 'proof1', maxCount: 1 },
+  { name: 'proof2', maxCount: 1 }
+]);
+
+export const uploadAgentFiles = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter(_req, file, cb) {
+    if (!file.mimetype.startsWith('image/') && file.mimetype !== 'application/pdf') return cb(new Error('Only image or PDF uploads are allowed'));
+    cb(null, true);
+  }
+}).fields([
+  { name: 'agentProof1', maxCount: 1 },
+  { name: 'agentProof2', maxCount: 1 }
+]);
+
+export const uploadLoanFiles = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter(_req, file, cb) {
+    if (!file.mimetype.startsWith('image/') && file.mimetype !== 'application/pdf') return cb(new Error('Only image or PDF uploads are allowed'));
+    cb(null, true);
+  }
+}).fields([
+  { name: 'guarantorProof1', maxCount: 1 },
+  { name: 'guarantorProof2', maxCount: 1 }
 ]);

@@ -6,7 +6,8 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 import { refreshLoanTotals } from '../utils/loanCalculator.js';
 
 export const createPayment = asyncHandler(async (req, res) => {
-  const { loanId, installmentIds = [], mode, notes } = req.body;
+  const { loanId, installmentIds = [], mode, notes, chequeNumber } = req.body;
+  if (mode === 'cheque' && !String(chequeNumber || '').trim()) return res.status(400).json({ message: 'Cheque number is required' });
   const loan = await Loan.findById(loanId).populate('borrower');
   if (!loan) return res.status(404).json({ message: 'Loan not found' });
 
@@ -27,6 +28,7 @@ export const createPayment = asyncHandler(async (req, res) => {
     loan: loan._id,
     amount,
     mode,
+    chequeNumber: mode === 'cheque' ? chequeNumber : undefined,
     installmentIds,
     collectedBy: req.user._id,
     notes
@@ -60,7 +62,7 @@ export const listPayments = asyncHandler(async (req, res) => {
 export const updatePayment = asyncHandler(async (req, res) => {
   const payment = await Payment.findById(req.params.id);
   if (!payment) return res.status(404).json({ message: 'Payment not found' });
-  const fields = ['mode', 'notes'];
+  const fields = ['mode', 'notes', 'chequeNumber'];
   const changes = buildChanges(payment, req.body, fields);
   fields.forEach((field) => {
     if (req.body[field] !== undefined) payment[field] = req.body[field];
@@ -71,7 +73,7 @@ export const updatePayment = asyncHandler(async (req, res) => {
 });
 
 export const generateReceipt = asyncHandler(async (req, res) => {
-  const payment = await Payment.findById(req.params.id).populate('loan').populate('borrower');
+  const payment = await Payment.findById(req.params.id).populate('loan').populate('borrower').populate('collectedBy', 'name username');
   if (!payment) return res.status(404).json({ message: 'Payment not found' });
   const pdf = await generatePaymentReceiptBuffer({ payment, loan: payment.loan, borrower: payment.borrower });
   res.setHeader('Content-Type', 'application/pdf');

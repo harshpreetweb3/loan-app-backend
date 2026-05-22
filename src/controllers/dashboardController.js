@@ -34,7 +34,7 @@ export const getDashboard = asyncHandler(async (req, res) => {
     }
   };
 
-  const [totalBorrowers, totalLoans, overdueLoans, todaysDue, myCollections, dailyDueLoans, recentPayments] = await Promise.all([
+  const [totalBorrowers, totalLoans, overdueLoans, todaysDue, myCollections, dailyDueLoans, overdueInstallmentLoans, recentPayments, allPayments, loanTotals] = await Promise.all([
     Borrower.countDocuments({}),
     Loan.countDocuments({}),
     Loan.countDocuments({ installments: overdueInstallment }),
@@ -48,7 +48,18 @@ export const getDashboard = asyncHandler(async (req, res) => {
       .populate('createdBy', 'name username')
       .limit(20)
       .sort({ createdAt: -1 }),
-    Payment.find({}).populate('borrower').populate('collectedBy', 'name username').sort({ createdAt: -1 }).limit(10)
+    Loan.find({ installments: overdueInstallment }).populate('borrower').populate('createdBy', 'name username').limit(20).sort({ createdAt: -1 }),
+    Payment.find({}).populate('borrower').populate('collectedBy', 'name username').sort({ createdAt: -1 }).limit(8),
+    Payment.aggregate([
+      {
+        $group: {
+          _id: null,
+          totalCollected: { $sum: '$amount' },
+          todayCollected: { $sum: { $cond: [{ $and: [{ $gte: ['$createdAt', todayStart] }, { $lte: ['$createdAt', todayEnd] }] }, '$amount', 0] } }
+        }
+      }
+    ]),
+    Loan.aggregate([{ $group: { _id: null, totalDistributed: { $sum: '$loanAmount' } } }])
   ]);
 
   const dailyDues = dailyDueLoans
@@ -58,16 +69,36 @@ export const getDashboard = asyncHandler(async (req, res) => {
     }))
     .filter(({ dueInstallments }) => dueInstallments.length > 0);
 
+  const overdueInstallments = overdueInstallmentLoans
+    .map((loan) => ({
+      loan,
+      dueInstallments: loan.installments.filter((item) => !item.convertedAt && item.dueDate < todayStart && unpaidStatuses.includes(item.status))
+    }))
+    .filter(({ dueInstallments }) => dueInstallments.length > 0);
+
+  const todaysDueAmount = dailyDues.reduce((sum, { dueInstallments }) => sum + dueInstallments.reduce((inner, item) => inner + Math.max(item.amount + (item.penaltyAmount || 0) - (item.paidAmount || 0), 0), 0), 0);
+  const totalOverdueLoanAmount = overdueInstallments.reduce((sum, { dueInstallments }) => sum + dueInstallments.reduce((inner, item) => inner + Math.max(item.amount + (item.penaltyAmount || 0) - (item.paidAmount || 0), 0), 0), 0);
+  const overdueInstallmentCount = overdueInstallments.reduce((sum, item) => sum + item.dueInstallments.length, 0);
+  const todaysInstallmentCount = dailyDues.reduce((sum, item) => sum + item.dueInstallments.length, 0);
+
   res.json({
     stats: {
       totalBorrowers,
       totalLoans,
       overdueLoans,
       todaysDue,
+      totalCollectedAmount: allPayments[0]?.totalCollected || 0,
+      todaysCollectionAmount: allPayments[0]?.todayCollected || 0,
+      todaysDueAmount,
+      totalOverdueLoanAmount,
+      overdueInstallmentCount,
+      todaysInstallmentCount,
+      totalLoanAmountDistributed: loanTotals[0]?.totalDistributed || 0,
       myCollections: myCollections[0]?.total || 0,
       myCollectionCount: myCollections[0]?.count || 0
     },
     dailyDues,
+    overdueInstallments,
     recentPayments
   });
 });

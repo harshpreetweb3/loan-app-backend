@@ -26,7 +26,7 @@ function roundMoney(value) {
 }
 
 export function buildInstallmentSchedule({ totalPayable, duration, installmentType, startDate, dateOfFinance, dueDayOfMonth, sequenceStart = 1 }) {
-  const count = Number(duration);
+  const count = installmentType === 'daily' ? Math.round(Number(duration) * 30) : Math.ceil(Number(duration));
   const installmentAmount = Math.ceil((Number(totalPayable) / count) * 100) / 100;
   const scheduleStart = new Date(startDate || dateOfFinance || new Date());
 
@@ -42,8 +42,8 @@ export function buildInstallmentSchedule({ totalPayable, duration, installmentTy
 
 export function calculateLoanSchedule({ loanAmount, interestPercent, interestAmount, duration, installmentType, startDate, dateOfFinance, processingCharges = 0, dueDayOfMonth }) {
   const principal = Number(loanAmount);
-  const interest = interestAmount !== undefined && interestAmount !== '' ? Number(interestAmount) : (principal * Number(interestPercent || 0)) / 100;
-  const percent = principal > 0 ? (interest / principal) * 100 : Number(interestPercent || 0);
+  const interest = (principal * Number(interestPercent || 0) * Number(duration || 0)) / 100;
+  const percent = Number(interestPercent || 0);
   const totalPayable = roundMoney(principal + interest + Number(processingCharges || 0));
   const { installmentAmount, installments } = buildInstallmentSchedule({
     totalPayable,
@@ -59,8 +59,8 @@ export function calculateLoanSchedule({ loanAmount, interestPercent, interestAmo
     interestAmount: roundMoney(interest),
     interestPercent: roundMoney(percent),
     installmentAmount,
-    totalInstallments: Number(duration),
-    remainingInstallments: Number(duration),
+    totalInstallments: installments.length,
+    remainingInstallments: installments.length,
     installments
   };
 }

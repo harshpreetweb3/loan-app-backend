@@ -7,6 +7,7 @@ const paymentSchema = new mongoose.Schema(
     loan: { type: mongoose.Schema.Types.ObjectId, ref: 'Loan', required: true },
     amount: { type: Number, required: true, min: 1 },
     mode: { type: String, enum: PAYMENT_MODES, required: true },
+    chequeNumber: String,
     installmentIds: [{ type: mongoose.Schema.Types.ObjectId }],
     collectedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     notes: String,
