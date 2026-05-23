@@ -26,6 +26,12 @@ function validateLoanPayload(payload) {
   if (!/^[6-9]\d{9}$/.test(String(payload.guarantor?.phone || ''))) errors.push('Enter a valid guarantor phone number');
   if (!payload.guarantor?.address) errors.push('Guarantor address is required');
   if (!payload.guarantor?.proof1Path) errors.push('Guarantor proof 1 is required');
+  if (payload.loanCategory === 'vehicle') {
+    if (!payload.vehicle?.rcPhotoPath) errors.push('Vehicle RC photo is required');
+    if (!payload.vehicle?.nameOnRc) errors.push('Name on RC is required');
+    if (!payload.vehicle?.rcRegisteredNumber) errors.push('RC registered number is required');
+    if (!payload.vehicle?.modelNumber) errors.push('Vehicle model number is required');
+  }
   return errors;
 }
 
@@ -42,8 +48,10 @@ function parseJsonField(value, fallback) {
 function normalizeLoanPayload(req, existing = {}) {
   const payload = { ...req.body };
   payload.guarantor = { ...(existing.guarantor || {}), ...parseJsonField(payload.guarantor, {}) };
+  payload.vehicle = { ...(existing.vehicle || {}), ...parseJsonField(payload.vehicle, {}) };
   if (req.files?.guarantorProof1?.[0]) payload.guarantor.proof1Path = publicPath(req.files.guarantorProof1[0].path);
   if (req.files?.guarantorProof2?.[0]) payload.guarantor.proof2Path = publicPath(req.files.guarantorProof2[0].path);
+  if (req.files?.rcPhoto?.[0]) payload.vehicle.rcPhotoPath = publicPath(req.files.rcPhoto[0].path);
   return payload;
 }
 
@@ -105,7 +113,7 @@ export const updateLoan = asyncHandler(async (req, res) => {
   const nextPayload = { ...loan.toObject(), ...payload, installmentCountMode: 'manual' };
   const errors = validateLoanPayload(nextPayload);
   if (errors.length) return res.status(400).json({ message: errors[0], errors });
-  const fields = ['loanAmount', 'interestPercent', 'interestAmount', 'duration', 'installmentType', 'processingCharges', 'startDate', 'dateOfFinance', 'dueDayOfMonth', 'loanCategory', 'guarantor'];
+  const fields = ['loanAmount', 'interestPercent', 'interestAmount', 'duration', 'installmentType', 'processingCharges', 'startDate', 'dateOfFinance', 'dueDayOfMonth', 'loanCategory', 'guarantor', 'vehicle'];
   const changes = buildChanges(loan, payload, fields);
   if (changes.length) {
     const schedule = calculateLoanSchedule(nextPayload);

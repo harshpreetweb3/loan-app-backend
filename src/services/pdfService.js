@@ -48,33 +48,38 @@ export function generatePaymentReceiptBuffer({ payment, loan, borrower }) {
 
     const pendingAmount = Math.max(Number(loan.totalPayable || 0) - Number(loan.totalPaid || 0), 0);
 
-    doc.rect(42, 36, 511, 86).fill('#111827');
-    doc.fillColor('#ffffff').fontSize(22).text('New Satluj Finance', 62, 56);
-    doc.fontSize(11).text('Payment Receipt', 62, 86);
-    doc.fontSize(10).text(`Receipt No: ${payment._id}`, 330, 58, { align: 'right' });
-    doc.text(`Date: ${formatDateTime(payment.createdAt)}`, 330, 78, { align: 'right' });
-    doc.fillColor('#111827').moveDown(4);
+    doc.rect(42, 36, 511, 92).fill('#111827');
+    doc.fillColor('#ffffff').fontSize(22).text('New Satluj Finance', 62, 58);
+    doc.fontSize(12).text('Payment Receipt', 62, 88);
+    doc.fontSize(10).text(`Receipt No: ${payment._id}`, 320, 58, { width: 213, align: 'right' });
+    doc.text(`Date: ${formatDateTime(payment.createdAt)}`, 320, 78, { width: 213, align: 'right' });
+    doc.fillColor('#111827');
 
-    doc.fontSize(14).text('Borrower Details').moveDown(0.4);
-    doc.fontSize(11).text(`Name: ${borrower.name}`);
-    doc.text(`Father/Care of: ${borrower.fatherOrCareOf || ''}`);
-    doc.text(`Phone: ${borrower.phone || borrower.mobileNumbers?.[0] || ''}`);
-    doc.text(`Address: ${borrower.address}`).moveDown();
+    doc.roundedRect(42, 154, 511, 108, 6).stroke('#d1d5db');
+    doc.fontSize(13).text('Borrower Details', 62, 174);
+    doc.fontSize(10).fillColor('#6b7280').text('Name', 62, 200);
+    doc.fillColor('#111827').fontSize(11).text(borrower.name || '', 62, 216, { width: 170 });
+    doc.fillColor('#6b7280').fontSize(10).text('Mobile', 248, 200);
+    doc.fillColor('#111827').fontSize(11).text(borrower.phone || borrower.mobileNumbers?.[0] || '', 248, 216, { width: 110 });
+    doc.fillColor('#6b7280').fontSize(10).text('Address', 376, 200);
+    doc.fillColor('#111827').fontSize(11).text(borrower.address || '', 376, 216, { width: 150 });
 
-    doc.roundedRect(42, doc.y, 511, 100, 6).stroke('#d1d5db');
-    const boxY = doc.y + 16;
-    doc.fontSize(10).fillColor('#6b7280').text('Total Payable as Loan Amount', 62, boxY);
-    doc.fillColor('#111827').fontSize(16).text(money(loan.totalPayable), 62, boxY + 18);
-    doc.fillColor('#6b7280').fontSize(10).text('Amount Paid So Far', 260, boxY);
-    doc.fillColor('#111827').fontSize(16).text(money(loan.totalPaid), 260, boxY + 18);
-    doc.fillColor('#6b7280').fontSize(10).text('Pending Amount', 430, boxY);
-    doc.fillColor('#111827').fontSize(16).text(money(pendingAmount), 430, boxY + 18);
-    doc.y = boxY + 76;
+    doc.roundedRect(42, 286, 511, 106, 6).fillAndStroke('#f9fafb', '#d1d5db');
+    doc.fillColor('#6b7280').fontSize(10).text('Loan Amount', 62, 310);
+    doc.fillColor('#111827').fontSize(16).text(money(loan.totalPayable), 62, 328, { width: 150 });
+    doc.fillColor('#6b7280').fontSize(10).text('Amount Paid So Far', 236, 310);
+    doc.fillColor('#111827').fontSize(16).text(money(loan.totalPaid), 236, 328, { width: 140 });
+    doc.fillColor('#6b7280').fontSize(10).text('Pending Amount', 410, 310);
+    doc.fillColor('#111827').fontSize(16).text(money(pendingAmount), 410, 328, { width: 120 });
 
-    doc.fontSize(14).text('Payment Details').moveDown(0.4);
-    doc.fontSize(11).text(`Payment Amount: ${money(payment.amount)}`);
-    doc.text(`Payment Mode: ${payment.mode}${payment.chequeNumber ? ` (${payment.chequeNumber})` : ''}`);
-    doc.text(`Collected By: ${payment.collectedBy?.name || payment.collectedBy?.username || 'N/A'}`);
+    doc.roundedRect(42, 416, 511, 118, 6).stroke('#d1d5db');
+    doc.fillColor('#111827').fontSize(13).text('Payment Details', 62, 436);
+    doc.fillColor('#6b7280').fontSize(10).text('Payment Amount', 62, 464);
+    doc.fillColor('#111827').fontSize(18).text(money(payment.amount), 62, 482);
+    doc.fillColor('#6b7280').fontSize(10).text('Payment Mode', 248, 464);
+    doc.fillColor('#111827').fontSize(11).text(`${payment.mode}${payment.chequeNumber ? ` (${payment.chequeNumber})` : ''}`, 248, 482);
+    doc.fillColor('#6b7280').fontSize(10).text('Collected By', 410, 464);
+    doc.fillColor('#111827').fontSize(11).text(payment.collectedBy?.name || payment.collectedBy?.username || 'N/A', 410, 482, { width: 120 });
 
     doc.end();
   });

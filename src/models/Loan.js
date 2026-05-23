@@ -40,6 +40,12 @@ const loanSchema = new mongoose.Schema(
       proof1Path: String,
       proof2Path: String
     },
+    vehicle: {
+      rcPhotoPath: String,
+      nameOnRc: String,
+      rcRegisteredNumber: String,
+      modelNumber: String
+    },
     loanAmount: { type: Number, required: true, min: 1 },
     interestPercent: { type: Number, required: true, min: 0 },
     interestAmount: { type: Number, default: 0 },

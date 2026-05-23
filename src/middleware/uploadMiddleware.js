@@ -49,6 +49,7 @@ export const uploadLoanFiles = multer({
     cb(null, true);
   }
 }).fields([
+  { name: 'rcPhoto', maxCount: 1 },
   { name: 'guarantorProof1', maxCount: 1 },
   { name: 'guarantorProof2', maxCount: 1 }
 ]);
