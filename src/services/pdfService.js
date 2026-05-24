@@ -25,6 +25,73 @@ function formatDateTime(value) {
   return `${formatDate(date)} ${new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: true }).format(date)}`;
 }
 
+const receiptTheme = {
+  primary: '#2563EB',
+  secondary: '#1E40AF',
+  pale: '#EFF6FF',
+  line: '#DBEAFE',
+  ink: '#0F172A',
+  muted: '#64748B',
+  soft: '#F8FAFC'
+};
+
+function receiptNumber(value) {
+  return String(value || '').toUpperCase();
+}
+
+function textValue(value) {
+  return value || 'N/A';
+}
+
+function drawReceiptShell(doc, { title, number, date }) {
+  doc.rect(0, 0, 612, 116).fill(receiptTheme.primary);
+  doc.rect(0, 104, 612, 12).fill(receiptTheme.secondary);
+
+  doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(21).text('New Satluj Finance', 42, 32);
+  doc.font('Helvetica').fontSize(10).fillColor('#DBEAFE').text('Professional Loan & Collection Services', 42, 59);
+  doc.font('Helvetica-Bold').fontSize(13).fillColor('#FFFFFF').text(title, 42, 82);
+
+  doc.roundedRect(382, 28, 172, 60, 6).fill('#FFFFFF');
+  doc.fillColor(receiptTheme.muted).font('Helvetica').fontSize(8).text('RECEIPT NO.', 398, 42);
+  doc.fillColor(receiptTheme.ink).font('Helvetica-Bold').fontSize(9).text(textValue(number), 398, 54, { width: 140, align: 'right' });
+  doc.fillColor(receiptTheme.muted).font('Helvetica').fontSize(8).text('DATE', 398, 70);
+  doc.fillColor(receiptTheme.ink).font('Helvetica-Bold').fontSize(9).text(textValue(date), 438, 70, { width: 100, align: 'right' });
+}
+
+function sectionTitle(doc, label, x, y) {
+  doc.fillColor(receiptTheme.secondary).font('Helvetica-Bold').fontSize(10).text(label.toUpperCase(), x, y);
+  doc.moveTo(x, y + 16).lineTo(x + 511, y + 16).strokeColor(receiptTheme.line).lineWidth(1).stroke();
+}
+
+function drawInfoGrid(doc, rows, x, y, width) {
+  const labelWidth = 118;
+  const rowHeight = 26;
+  rows.forEach(([label, value], index) => {
+    const rowY = y + index * rowHeight;
+    doc.rect(x, rowY, width, rowHeight).fill(index % 2 === 0 ? receiptTheme.soft : '#FFFFFF');
+    doc.fillColor(receiptTheme.muted).font('Helvetica').fontSize(8).text(label, x + 12, rowY + 8, { width: labelWidth });
+    doc.fillColor(receiptTheme.ink).font('Helvetica-Bold').fontSize(9).text(textValue(value), x + labelWidth + 16, rowY + 8, { width: width - labelWidth - 28 });
+  });
+  doc.roundedRect(x, y, width, rows.length * rowHeight, 5).strokeColor(receiptTheme.line).lineWidth(1).stroke();
+}
+
+function drawAmountCards(doc, cards, x, y) {
+  const gap = 12;
+  const cardWidth = (511 - gap * (cards.length - 1)) / cards.length;
+  cards.forEach((card, index) => {
+    const cardX = x + index * (cardWidth + gap);
+    doc.roundedRect(cardX, y, cardWidth, 72, 6).fillAndStroke(index === 0 ? receiptTheme.pale : '#FFFFFF', receiptTheme.line);
+    doc.fillColor(receiptTheme.muted).font('Helvetica').fontSize(8).text(card.label.toUpperCase(), cardX + 12, y + 15, { width: cardWidth - 24 });
+    doc.fillColor(card.emphasis ? receiptTheme.primary : receiptTheme.ink).font('Helvetica-Bold').fontSize(14).text(card.value, cardX + 12, y + 35, { width: cardWidth - 24 });
+  });
+}
+
+function drawReceiptFooter(doc) {
+  doc.moveTo(42, 724).lineTo(553, 724).strokeColor(receiptTheme.line).lineWidth(1).stroke();
+  doc.fillColor(receiptTheme.muted).font('Helvetica').fontSize(8).text('This computer generated receipt confirms the recorded transaction in New Satluj Finance system.', 42, 738, { width: 330 });
+  doc.fillColor(receiptTheme.ink).font('Helvetica-Bold').fontSize(9).text('Authorized Signatory', 410, 738, { width: 143, align: 'right' });
+}
+
 function writeDocument(filePath, writer) {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ margin: 42 });
@@ -47,39 +114,38 @@ export function generatePaymentReceiptBuffer({ payment, loan, borrower }) {
     doc.on('error', reject);
 
     const pendingAmount = Math.max(Number(loan.totalPayable || 0) - Number(loan.totalPaid || 0), 0);
+    const mobile = (borrower.mobileNumbers || [borrower.phone]).filter(Boolean).join(', ');
 
-    doc.rect(42, 36, 511, 92).fill('#111827');
-    doc.fillColor('#ffffff').fontSize(22).text('New Satluj Finance', 62, 58);
-    doc.fontSize(12).text('Payment Receipt', 62, 88);
-    doc.fontSize(10).text(`Receipt No: ${payment._id}`, 320, 58, { width: 213, align: 'right' });
-    doc.text(`Date: ${formatDateTime(payment.createdAt)}`, 320, 78, { width: 213, align: 'right' });
-    doc.fillColor('#111827');
+    drawReceiptShell(doc, {
+      title: 'Payment Receipt',
+      number: receiptNumber(payment._id),
+      date: formatDateTime(payment.createdAt)
+    });
 
-    doc.roundedRect(42, 154, 511, 108, 6).stroke('#d1d5db');
-    doc.fontSize(13).text('Borrower Details', 62, 174);
-    doc.fontSize(10).fillColor('#6b7280').text('Name', 62, 200);
-    doc.fillColor('#111827').fontSize(11).text(borrower.name || '', 62, 216, { width: 170 });
-    doc.fillColor('#6b7280').fontSize(10).text('Mobile', 248, 200);
-    doc.fillColor('#111827').fontSize(11).text(borrower.phone || borrower.mobileNumbers?.[0] || '', 248, 216, { width: 110 });
-    doc.fillColor('#6b7280').fontSize(10).text('Address', 376, 200);
-    doc.fillColor('#111827').fontSize(11).text(borrower.address || '', 376, 216, { width: 150 });
+    sectionTitle(doc, 'Customer Details', 42, 148);
+    drawInfoGrid(doc, [
+      ['Customer ID', borrower.customerId],
+      ['Customer Name', borrower.name],
+      ['Mobile Number', mobile],
+      ['Address', borrower.address]
+    ], 42, 178, 511);
 
-    doc.roundedRect(42, 286, 511, 106, 6).fillAndStroke('#f9fafb', '#d1d5db');
-    doc.fillColor('#6b7280').fontSize(10).text('Loan Amount', 62, 310);
-    doc.fillColor('#111827').fontSize(16).text(money(loan.totalPayable), 62, 328, { width: 150 });
-    doc.fillColor('#6b7280').fontSize(10).text('Amount Paid So Far', 236, 310);
-    doc.fillColor('#111827').fontSize(16).text(money(loan.totalPaid), 236, 328, { width: 140 });
-    doc.fillColor('#6b7280').fontSize(10).text('Pending Amount', 410, 310);
-    doc.fillColor('#111827').fontSize(16).text(money(pendingAmount), 410, 328, { width: 120 });
+    sectionTitle(doc, 'Loan Summary', 42, 306);
+    drawAmountCards(doc, [
+      { label: 'Loan Amount', value: money(loan.totalPayable), emphasis: true },
+      { label: 'Amount Paid So Far', value: money(loan.totalPaid) },
+      { label: 'Pending Amount', value: money(pendingAmount) }
+    ], 42, 336);
 
-    doc.roundedRect(42, 416, 511, 118, 6).stroke('#d1d5db');
-    doc.fillColor('#111827').fontSize(13).text('Payment Details', 62, 436);
-    doc.fillColor('#6b7280').fontSize(10).text('Payment Amount', 62, 464);
-    doc.fillColor('#111827').fontSize(18).text(money(payment.amount), 62, 482);
-    doc.fillColor('#6b7280').fontSize(10).text('Payment Mode', 248, 464);
-    doc.fillColor('#111827').fontSize(11).text(`${payment.mode}${payment.chequeNumber ? ` (${payment.chequeNumber})` : ''}`, 248, 482);
-    doc.fillColor('#6b7280').fontSize(10).text('Collected By', 410, 464);
-    doc.fillColor('#111827').fontSize(11).text(payment.collectedBy?.name || payment.collectedBy?.username || 'N/A', 410, 482, { width: 120 });
+    sectionTitle(doc, 'Payment Details', 42, 444);
+    drawInfoGrid(doc, [
+      ['Payment Amount', money(payment.amount)],
+      ['Payment Mode', `${payment.mode}${payment.chequeNumber ? ` (${payment.chequeNumber})` : ''}`],
+      ['Collected By', payment.collectedBy?.name || payment.collectedBy?.username],
+      ['Notes', payment.notes]
+    ], 42, 474, 511);
+
+    drawReceiptFooter(doc);
 
     doc.end();
   });
@@ -95,32 +161,41 @@ export function generateLoanReceiptBuffer({ loan, borrower, agent }) {
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
 
-    doc.fontSize(20).text('New Satluj Finance', { align: 'center' });
-    doc.fontSize(14).text('Loan Receipt', { align: 'center' }).moveDown();
-    doc.fontSize(11).text(`Receipt Number: ${number}`);
-    doc.text(`Date: ${formatDate(new Date())}`);
-    doc.text(`Agent Name: ${agent?.name || agent?.username || ''}`).moveDown();
+    const pendingAmount = Math.max(Number(loan.totalPayable || 0) - Number(loan.totalPaid || 0), 0);
+    const mobile = (borrower.mobileNumbers || [borrower.phone]).filter(Boolean).join(', ');
 
-    doc.fontSize(14).text('Borrower Details');
-    doc.fontSize(11).text(`Customer ID: ${borrower.customerId || ''}`);
-    doc.text(`Name: ${borrower.name}`);
-    doc.text(`Mobile: ${(borrower.mobileNumbers || [borrower.phone]).filter(Boolean).join(', ')}`);
-    doc.text(`Address: ${borrower.address}`).moveDown();
-
-    doc.fontSize(14).text('Loan Details');
-    doc.fontSize(11).text(`Loan Type: ${loan.loanCategory}`);
-    doc.text(`Installment Type: ${loan.installmentType}`);
-    doc.text(`Loan Amount: ${money(loan.loanAmount)}`);
-    doc.text(`Processing Charges: ${money(loan.processingCharges)}`);
-    doc.text(`Interest: ${loan.interestPercent}% (${money(loan.interestAmount)})`);
-    doc.text(`Total Amount: ${money(loan.totalPayable)}`);
-    doc.text(`Installment Amount: ${money(loan.installmentAmount)}`);
-    doc.text(`Total Installments: ${loan.totalInstallments}`).moveDown();
-
-    doc.fontSize(14).text('Installment Plan');
-    loan.installments.forEach((item) => {
-      doc.fontSize(9).text(`#${item.sequence} | Due: ${formatDate(item.dueDate)} | Amount: ${money(item.amount)} | Status: ${item.status}`);
+    drawReceiptShell(doc, {
+      title: 'Loan Receipt',
+      number,
+      date: formatDate(loan.receipt?.generatedAt || new Date())
     });
+
+    sectionTitle(doc, 'Customer Details', 42, 148);
+    drawInfoGrid(doc, [
+      ['Customer ID', borrower.customerId],
+      ['Customer Name', borrower.name],
+      ['Mobile Number', mobile],
+      ['Address', borrower.address]
+    ], 42, 178, 511);
+
+    sectionTitle(doc, 'Loan Summary', 42, 306);
+    drawAmountCards(doc, [
+      { label: 'Loan Amount', value: money(loan.totalPayable), emphasis: true },
+      { label: 'Amount Paid So Far', value: money(loan.totalPaid) },
+      { label: 'Pending Amount', value: money(pendingAmount) }
+    ], 42, 336);
+
+    sectionTitle(doc, 'Loan Details', 42, 444);
+    drawInfoGrid(doc, [
+      ['Loan Type', loan.loanCategory],
+      ['Installment Type', loan.installmentType],
+      ['Installment Amount', money(loan.installmentAmount)],
+      ['Total Installments', loan.totalInstallments],
+      ['Processing Charges', money(loan.processingCharges)],
+      ['Created By', agent?.name || agent?.username]
+    ], 42, 474, 511);
+
+    drawReceiptFooter(doc);
 
     doc.end();
   });
