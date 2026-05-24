@@ -87,9 +87,9 @@ function drawAmountCards(doc, cards, x, y) {
 }
 
 function drawReceiptFooter(doc) {
-  doc.moveTo(42, 724).lineTo(553, 724).strokeColor(receiptTheme.line).lineWidth(1).stroke();
-  doc.fillColor(receiptTheme.muted).font('Helvetica').fontSize(8).text('This computer generated receipt confirms the recorded transaction in New Satluj Finance system.', 42, 738, { width: 330 });
-  doc.fillColor(receiptTheme.ink).font('Helvetica-Bold').fontSize(9).text('Authorized Signatory', 410, 738, { width: 143, align: 'right' });
+  doc.moveTo(42, 692).lineTo(553, 692).strokeColor(receiptTheme.line).lineWidth(1).stroke();
+  doc.fillColor(receiptTheme.muted).font('Helvetica').fontSize(8).text('This computer generated receipt confirms the recorded transaction in New Satluj Finance system.', 42, 706, { width: 330 });
+  doc.fillColor(receiptTheme.ink).font('Helvetica-Bold').fontSize(9).text('Authorized Signatory', 410, 706, { width: 143, align: 'right' });
 }
 
 function writeDocument(filePath, writer) {

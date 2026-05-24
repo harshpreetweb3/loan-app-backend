@@ -127,6 +127,29 @@ export const listAgents = asyncHandler(async (req, res) => {
   });
 });
 
+export const getAgent = asyncHandler(async (req, res) => {
+  const agent = await User.findOne({ _id: req.params.id, role: ROLES.AGENT }).select('-password').populate('createdBy', 'name username');
+  if (!agent) return res.status(404).json({ message: 'Agent not found' });
+  const [loans, payments, collectionTotals] = await Promise.all([
+    Loan.find({ createdBy: agent._id }).populate('borrower', 'name customerId mobileNumbers phone').sort({ createdAt: -1 }),
+    Payment.find({ collectedBy: agent._id }).populate('borrower', 'name customerId mobileNumbers phone').sort({ createdAt: -1 }).limit(25),
+    Payment.aggregate([
+      { $match: { collectedBy: agent._id } },
+      { $group: { _id: null, amount: { $sum: '$amount' }, count: { $sum: 1 } } }
+    ])
+  ]);
+  res.json({
+    agent,
+    loans,
+    payments,
+    stats: {
+      loansCreated: loans.length,
+      collectionCount: collectionTotals[0]?.count || 0,
+      collectionAmount: collectionTotals[0]?.amount || 0
+    }
+  });
+});
+
 export const deleteAgent = asyncHandler(async (req, res) => {
   const agent = await User.findOne({ _id: req.params.id, role: ROLES.AGENT });
   if (!agent) return res.status(404).json({ message: 'Agent not found' });
