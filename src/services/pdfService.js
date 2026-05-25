@@ -14,7 +14,8 @@ function formatDate(value) {
   return new Intl.DateTimeFormat('en-GB', {
     day: '2-digit',
     month: '2-digit',
-    year: 'numeric'
+    year: 'numeric',
+    timeZone: 'Asia/Kolkata'
   }).format(date);
 }
 
@@ -22,7 +23,7 @@ function formatDateTime(value) {
   if (!value) return '';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
-  return `${formatDate(date)} ${new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: true }).format(date)}`;
+  return `${formatDate(date)}, ${new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' }).format(date)}`;
 }
 
 const receiptTheme = {
@@ -36,7 +37,13 @@ const receiptTheme = {
 };
 
 function receiptNumber(value) {
-  return String(value || '').toUpperCase();
+  const raw = String(value || '').toUpperCase();
+  const numeric = raw.match(/\d+$/)?.[0];
+  if (numeric) return `RCPT-${numeric.slice(-3).padStart(3, '0')}`;
+  const hex = raw.match(/[A-F0-9]+$/)?.[0] || raw;
+  const valueNumber = Number.parseInt(hex.slice(-6), 16);
+  const suffix = Number.isFinite(valueNumber) ? ((valueNumber % 999) + 1) : 1;
+  return `RCPT-${String(suffix).padStart(3, '0')}`;
 }
 
 function textValue(value) {
@@ -48,8 +55,7 @@ function drawReceiptShell(doc, { title, number, date }) {
   doc.rect(0, 104, 612, 12).fill(receiptTheme.secondary);
 
   doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(21).text('New Satluj Finance', 42, 32);
-  doc.font('Helvetica').fontSize(10).fillColor('#DBEAFE').text('Professional Loan & Collection Services', 42, 59);
-  doc.font('Helvetica-Bold').fontSize(13).fillColor('#FFFFFF').text(title, 42, 82);
+  doc.font('Helvetica-Bold').fontSize(13).fillColor('#FFFFFF').text(title, 42, 72);
 
   doc.roundedRect(382, 28, 172, 60, 6).fill('#FFFFFF');
   doc.fillColor(receiptTheme.muted).font('Helvetica').fontSize(8).text('RECEIPT NO.', 398, 42);
@@ -166,8 +172,8 @@ export function generateLoanReceiptBuffer({ loan, borrower, agent }) {
 
     drawReceiptShell(doc, {
       title: 'Loan Receipt',
-      number,
-      date: formatDate(loan.receipt?.generatedAt || new Date())
+      number: receiptNumber(number),
+      date: formatDateTime(loan.receipt?.generatedAt || new Date())
     });
 
     sectionTitle(doc, 'Customer Details', 42, 148);

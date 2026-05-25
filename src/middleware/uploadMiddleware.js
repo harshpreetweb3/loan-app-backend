@@ -3,8 +3,27 @@ import path from 'path';
 import fs from 'fs/promises';
 import { agentProofDir, borrowerPhotoDir, proofDir, rcPhotoDir } from '../utils/storage.js';
 
-export const MAX_UPLOAD_FILE_SIZE = 100 * 1024;
-const UPLOAD_SIZE_MESSAGE = 'Uploads must be 100 KB or smaller';
+export const MAX_BORROWER_PHOTO_SIZE = 100 * 1024;
+export const MAX_PROOF_FILE_SIZE = 300 * 1024;
+export const MAX_UPLOAD_FILE_SIZE = MAX_PROOF_FILE_SIZE;
+const UPLOAD_SIZE_MESSAGE = 'Uploads must be 300 KB or smaller';
+
+const FIELD_SIZE_LIMITS = {
+  photo: MAX_BORROWER_PHOTO_SIZE,
+  rcPhoto: MAX_PROOF_FILE_SIZE,
+  proof1: MAX_PROOF_FILE_SIZE,
+  proof2: MAX_PROOF_FILE_SIZE,
+  guarantorProof1: MAX_PROOF_FILE_SIZE,
+  guarantorProof2: MAX_PROOF_FILE_SIZE,
+  agentProof1: MAX_PROOF_FILE_SIZE,
+  agentProof2: MAX_PROOF_FILE_SIZE
+};
+
+function sizeMessage(file) {
+  const limit = FIELD_SIZE_LIMITS[file.fieldname] || MAX_PROOF_FILE_SIZE;
+  const label = file.fieldname === 'photo' ? 'Borrower photo' : 'Upload';
+  return `${label} must be ${Math.round(limit / 1024)} KB or smaller`;
+}
 
 const storage = multer.diskStorage({
   destination(req, file, cb) {
@@ -21,11 +40,11 @@ const storage = multer.diskStorage({
 
 function uploadSizeGuard(req, _res, next) {
   const files = Object.values(req.files || {}).flat();
-  const oversized = files.filter((file) => file.size > MAX_UPLOAD_FILE_SIZE);
+  const oversized = files.filter((file) => file.size > (FIELD_SIZE_LIMITS[file.fieldname] || MAX_PROOF_FILE_SIZE));
   if (!oversized.length) return next();
 
   Promise.all(files.map((file) => fs.unlink(file.path).catch(() => {}))).finally(() => {
-    const error = new Error(UPLOAD_SIZE_MESSAGE);
+    const error = new Error(sizeMessage(oversized[0]));
     error.statusCode = 400;
     next(error);
   });

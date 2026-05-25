@@ -63,7 +63,7 @@ export const createLoan = asyncHandler(async (req, res) => {
   const errors = validateLoanPayload(payload);
   if (errors.length) return res.status(400).json({ message: errors[0], errors });
   const schedule = calculateLoanSchedule(payload);
-  const receiptNumber = await nextSequence('loanReceipt', 'LR-');
+  const receiptNumber = await nextSequence('loanReceipt', 'RCPT-', 3);
   const loan = await Loan.create({
     ...payload,
     ...schedule,
@@ -127,7 +127,7 @@ export const updateLoan = asyncHandler(async (req, res) => {
 export const generateLoanReceipt = asyncHandler(async (req, res) => {
   const loan = await Loan.findById(req.params.id).populate('borrower').populate('createdBy', 'name username');
   if (!loan) return res.status(404).json({ message: 'Loan not found' });
-  if (!loan.receipt?.receiptNumber) loan.receipt.receiptNumber = await nextSequence('loanReceipt', 'LR-');
+  if (!loan.receipt?.receiptNumber) loan.receipt.receiptNumber = await nextSequence('loanReceipt', 'RCPT-', 3);
   loan.receipt.generatedAt = new Date();
   await loan.save();
   const pdf = await generateLoanReceiptBuffer({ loan, borrower: loan.borrower, agent: loan.createdBy });
