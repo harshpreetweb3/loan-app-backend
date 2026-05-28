@@ -4,7 +4,7 @@ import Payment from '../models/Payment.js';
 import CallNote from '../models/CallNote.js';
 import { buildChanges, writeAudit } from '../utils/audit.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
-import { publicPath } from '../utils/storage.js';
+import { persistUploadedFile } from '../utils/cloudStorage.js';
 import { nextSequence } from '../utils/sequence.js';
 
 function parseJsonField(value, fallback) {
@@ -17,16 +17,16 @@ function parseJsonField(value, fallback) {
   }
 }
 
-function normalizeBorrowerPayload(req) {
+async function normalizeBorrowerPayload(req) {
   const payload = { ...req.body };
   payload.mobileNumbers = parseJsonField(payload.mobileNumbers, payload.phone ? [payload.phone] : []);
   payload.guarantor = parseJsonField(payload.guarantor, {});
   payload.vehicle = parseJsonField(payload.vehicle, {});
   payload.bank = parseJsonField(payload.bank, {});
-  if (req.files?.photo?.[0]) payload.photoPath = publicPath(req.files.photo[0].path);
-  if (req.files?.proof1?.[0]) payload.proof1Path = publicPath(req.files.proof1[0].path);
-  if (req.files?.proof2?.[0]) payload.proof2Path = publicPath(req.files.proof2[0].path);
-  if (req.files?.rcPhoto?.[0]) payload.vehicle = { ...payload.vehicle, rcPhotoPath: publicPath(req.files.rcPhoto[0].path) };
+  if (req.files?.photo?.[0]) payload.photoPath = await persistUploadedFile(req.files.photo[0]);
+  if (req.files?.proof1?.[0]) payload.proof1Path = await persistUploadedFile(req.files.proof1[0]);
+  if (req.files?.proof2?.[0]) payload.proof2Path = await persistUploadedFile(req.files.proof2[0]);
+  if (req.files?.rcPhoto?.[0]) payload.vehicle = { ...payload.vehicle, rcPhotoPath: await persistUploadedFile(req.files.rcPhoto[0]) };
   if (!payload.phone && payload.mobileNumbers?.[0]) payload.phone = payload.mobileNumbers[0];
   return payload;
 }
@@ -42,7 +42,7 @@ function validateBorrowerPayload(payload, { requirePhoto = false } = {}) {
   if (isBlank(payload.name)) errors.push('Borrower name is required');
   if (isBlank(payload.address)) errors.push('Borrower address is required');
   if (!mobileNumbers.length) errors.push('At least one mobile number is required');
-  if (mobileNumbers.some((number) => !/^[6-9]\d{9}$/.test(String(number)))) errors.push('Enter valid 10 digit mobile numbers');
+  if (mobileNumbers.some((number) => !/^[6-9]\d{9}$/.test(String(number)))) errors.push('Please enter a valid mobile number');
   if (requirePhoto && isBlank(payload.photoPath)) errors.push('Borrower photo is required. Capture a photo or upload a passport size image');
   if (requirePhoto && isBlank(payload.proof1Path)) errors.push('Borrower proof 1 is required');
   if (isBlank(payload.bank?.bankName)) errors.push('Bank name is required');
@@ -53,7 +53,7 @@ function validateBorrowerPayload(payload, { requirePhoto = false } = {}) {
 }
 
 export const createBorrower = asyncHandler(async (req, res) => {
-  const payload = normalizeBorrowerPayload(req);
+  const payload = await normalizeBorrowerPayload(req);
   const errors = validateBorrowerPayload(payload, { requirePhoto: true });
   if (errors.length) return res.status(400).json({ message: errors[0], errors });
   const borrower = await Borrower.create({ ...payload, customerId: await nextSequence('customer', 'CUST-'), createdBy: req.user._id });
@@ -92,7 +92,7 @@ export const getBorrower = asyncHandler(async (req, res) => {
 export const updateBorrower = asyncHandler(async (req, res) => {
   const borrower = await Borrower.findById(req.params.id);
   if (!borrower) return res.status(404).json({ message: 'Borrower not found' });
-  const payload = normalizeBorrowerPayload(req);
+  const payload = await normalizeBorrowerPayload(req);
   const nextPayload = { ...borrower.toObject(), ...payload };
   const errors = validateBorrowerPayload(nextPayload);
   if (errors.length) return res.status(400).json({ message: errors[0], errors });

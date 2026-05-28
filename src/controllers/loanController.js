@@ -5,7 +5,7 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 import { buildInstallmentSchedule, calculateLoanSchedule, refreshLoanTotals } from '../utils/loanCalculator.js';
 import { generateLoanReceiptBuffer, generateNocPdf } from '../services/pdfService.js';
 import { nextSequence } from '../utils/sequence.js';
-import { publicPath } from '../utils/storage.js';
+import { persistUploadedFile } from '../utils/cloudStorage.js';
 
 function numberValue(value) {
   return Number(value);
@@ -23,7 +23,7 @@ function validateLoanPayload(payload) {
   if (payload.installmentType === 'monthly' && (numberValue(payload.dueDayOfMonth) < 1 || numberValue(payload.dueDayOfMonth) > 31)) errors.push('Due day must be between 1 and 31');
   if (!payload.guarantor?.name) errors.push('Guarantor name is required');
   if (!payload.guarantor?.fatherName) errors.push('Guarantor father name is required');
-  if (!/^[6-9]\d{9}$/.test(String(payload.guarantor?.phone || ''))) errors.push('Enter a valid guarantor phone number');
+  if (!/^[6-9]\d{9}$/.test(String(payload.guarantor?.phone || ''))) errors.push('Please enter a valid mobile number');
   if (!payload.guarantor?.address) errors.push('Guarantor address is required');
   if (!payload.guarantor?.proof1Path) errors.push('Guarantor proof 1 is required');
   if (payload.loanCategory === 'vehicle') {
@@ -45,18 +45,18 @@ function parseJsonField(value, fallback) {
   }
 }
 
-function normalizeLoanPayload(req, existing = {}) {
+async function normalizeLoanPayload(req, existing = {}) {
   const payload = { ...req.body };
   payload.guarantor = { ...(existing.guarantor || {}), ...parseJsonField(payload.guarantor, {}) };
   payload.vehicle = { ...(existing.vehicle || {}), ...parseJsonField(payload.vehicle, {}) };
-  if (req.files?.guarantorProof1?.[0]) payload.guarantor.proof1Path = publicPath(req.files.guarantorProof1[0].path);
-  if (req.files?.guarantorProof2?.[0]) payload.guarantor.proof2Path = publicPath(req.files.guarantorProof2[0].path);
-  if (req.files?.rcPhoto?.[0]) payload.vehicle.rcPhotoPath = publicPath(req.files.rcPhoto[0].path);
+  if (req.files?.guarantorProof1?.[0]) payload.guarantor.proof1Path = await persistUploadedFile(req.files.guarantorProof1[0]);
+  if (req.files?.guarantorProof2?.[0]) payload.guarantor.proof2Path = await persistUploadedFile(req.files.guarantorProof2[0]);
+  if (req.files?.rcPhoto?.[0]) payload.vehicle.rcPhotoPath = await persistUploadedFile(req.files.rcPhoto[0]);
   return payload;
 }
 
 export const createLoan = asyncHandler(async (req, res) => {
-  const payload = normalizeLoanPayload(req);
+  const payload = await normalizeLoanPayload(req);
   const borrower = await Borrower.findById(payload.borrower);
   if (!borrower) return res.status(404).json({ message: 'Borrower not found' });
   payload.installmentCountMode = 'manual';
@@ -109,7 +109,7 @@ export const getLoan = asyncHandler(async (req, res) => {
 export const updateLoan = asyncHandler(async (req, res) => {
   const loan = await Loan.findById(req.params.id);
   if (!loan) return res.status(404).json({ message: 'Loan not found' });
-  const payload = normalizeLoanPayload(req, loan);
+  const payload = await normalizeLoanPayload(req, loan);
   const nextPayload = { ...loan.toObject(), ...payload, installmentCountMode: 'manual' };
   const errors = validateLoanPayload(nextPayload);
   if (errors.length) return res.status(400).json({ message: errors[0], errors });

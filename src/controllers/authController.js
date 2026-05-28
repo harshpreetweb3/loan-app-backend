@@ -3,7 +3,7 @@ import Loan from '../models/Loan.js';
 import Payment from '../models/Payment.js';
 import User from '../models/User.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
-import { publicPath } from '../utils/storage.js';
+import { persistUploadedFile } from '../utils/cloudStorage.js';
 import { signToken } from '../utils/token.js';
 
 function userPayload(user) {
@@ -53,7 +53,7 @@ export const createAgent = asyncHandler(async (req, res) => {
   const errors = [];
   if (!String(name || '').trim()) errors.push('Agent name is required');
   if (!String(address || '').trim()) errors.push('Agent address is required');
-  if (!/^[6-9]\d{9}$/.test(String(mobileNumber || ''))) errors.push('Enter a valid agent mobile number');
+  if (!/^[6-9]\d{9}$/.test(String(mobileNumber || ''))) errors.push('Please enter a valid mobile number');
   if (!req.files?.agentProof1?.[0]) errors.push('Agent proof 1 is required');
   if (errors.length) return res.status(400).json({ message: errors[0], errors });
   const username = await uniqueUsername(name);
@@ -64,8 +64,8 @@ export const createAgent = asyncHandler(async (req, res) => {
     password,
     address,
     mobileNumber,
-    proof1Path: req.files?.agentProof1?.[0] ? publicPath(req.files.agentProof1[0].path) : undefined,
-    proof2Path: req.files?.agentProof2?.[0] ? publicPath(req.files.agentProof2[0].path) : undefined,
+    proof1Path: req.files?.agentProof1?.[0] ? await persistUploadedFile(req.files.agentProof1[0]) : undefined,
+    proof2Path: req.files?.agentProof2?.[0] ? await persistUploadedFile(req.files.agentProof2[0]) : undefined,
     tempPasswordIssuedAt: new Date(),
     role: ROLES.AGENT,
     createdBy: req.user._id
