@@ -92,6 +92,47 @@ function drawAmountCards(doc, cards, x, y) {
   });
 }
 
+function drawLoanSummaryCards(doc, loan, x, y) {
+  const gap = 12;
+  const cardWidth = (511 - gap * 2) / 3;
+  const height = 124;
+  const totalAmount = loanTotalWithPenalty(loan);
+  const paidAmount = Number(loan.totalPaid || 0);
+  const pendingProcessingFee = loan.processingFeeMode === 'separate'
+    ? Math.max(Number(loan.processingCharges || 0) - Number(loan.processingFeePaidAmount || 0) - Number(loan.processingFeeWaivedAmount || 0), 0)
+    : 0;
+  const pendingInstallments = (loan.installments || []).reduce((sum, item) => sum + Math.max(Number(item.amount || 0) - Number(item.paidAmount || 0), 0), 0);
+  const pendingPenalties = (loan.installments || []).reduce((sum, item) => sum + Math.max(Number(item.penaltyAmount || 0) - Number(item.penaltyPaidAmount || 0) - Number(item.penaltyWaivedAmount || 0), 0), 0);
+  const pendingAmount = Math.max(pendingInstallments + pendingPenalties + pendingProcessingFee, 0);
+  const processingFees = Math.max(Number(loan.processingCharges || 0) - Number(loan.processingFeeWaivedAmount || 0), 0);
+  const firstX = x;
+
+  doc.roundedRect(firstX, y, cardWidth, height, 6).fillAndStroke(receiptTheme.pale, receiptTheme.line);
+  doc.fillColor(receiptTheme.secondary).font('Helvetica-Bold').fontSize(9).text('LOAN SUMMARY', firstX + 12, y + 12, { width: cardWidth - 24 });
+  [
+    ['Loan Amount', money(loan.loanAmount)],
+    ['Interest Amount', money(loan.interestAmount)],
+    ['Processing Fees', money(processingFees)]
+  ].forEach(([label, value], index) => {
+    const rowY = y + 33 + index * 17;
+    doc.fillColor(receiptTheme.muted).font('Helvetica').fontSize(7.5).text(label, firstX + 12, rowY, { width: 82 });
+    doc.fillColor(receiptTheme.ink).font('Helvetica-Bold').fontSize(7.5).text(value, firstX + 92, rowY, { width: cardWidth - 104, align: 'right' });
+  });
+  doc.moveTo(firstX + 12, y + 88).lineTo(firstX + cardWidth - 12, y + 88).strokeColor(receiptTheme.line).lineWidth(1).stroke();
+  doc.fillColor(receiptTheme.secondary).font('Helvetica-Bold').fontSize(8.5).text('Total Amount', firstX + 12, y + 98, { width: 82 });
+  doc.fillColor(receiptTheme.primary).font('Helvetica-Bold').fontSize(8.5).text(money(totalAmount), firstX + 92, y + 98, { width: cardWidth - 104, align: 'right' });
+
+  [
+    ['AMOUNT PAID (SO FAR)', money(paidAmount), receiptTheme.primary],
+    ['PENDING AMOUNT', money(pendingAmount), receiptTheme.ink]
+  ].forEach(([label, value, color], index) => {
+    const cardX = x + (index + 1) * (cardWidth + gap);
+    doc.roundedRect(cardX, y, cardWidth, height, 6).fillAndStroke('#FFFFFF', receiptTheme.line);
+    doc.fillColor(receiptTheme.muted).font('Helvetica').fontSize(8).text(label, cardX + 12, y + 22, { width: cardWidth - 24 });
+    doc.fillColor(color).font('Helvetica-Bold').fontSize(15).text(value, cardX + 12, y + 54, { width: cardWidth - 24 });
+  });
+}
+
 function drawReceiptFooter(doc) {
   doc.moveTo(42, 692).lineTo(553, 692).strokeColor(receiptTheme.line).lineWidth(1).stroke();
   doc.fillColor(receiptTheme.muted).font('Helvetica').fontSize(8).text('This computer generated receipt confirms the recorded transaction in Satluj Finance system.', 42, 706, { width: 330 });
@@ -103,7 +144,8 @@ function loanPenaltyTotal(loan) {
 }
 
 function loanTotalWithPenalty(loan) {
-  return Number(loan.loanAmount || 0) + Number(loan.interestAmount || 0) + Number(loan.processingCharges || 0) + loanPenaltyTotal(loan);
+  const processingFees = Math.max(Number(loan.processingCharges || 0) - Number(loan.processingFeeWaivedAmount || 0), 0);
+  return Number(loan.loanAmount || 0) + Number(loan.interestAmount || 0) + processingFees + loanPenaltyTotal(loan);
 }
 
 function drawLoanSummaryBreakdown(doc, loan, x, y, width) {
@@ -112,7 +154,7 @@ function drawLoanSummaryBreakdown(doc, loan, x, y, width) {
   const rows = [
     ['Loan Amount', money(loan.loanAmount)],
     ['Interest Amount', money(loan.interestAmount)],
-    ['Processing Fees', money(loan.processingCharges)]
+    ['Processing Fees', money(Math.max(Number(loan.processingCharges || 0) - Number(loan.processingFeeWaivedAmount || 0), 0))]
   ];
   const penaltyAmount = loanPenaltyTotal(loan);
   if (penaltyAmount > 0) rows.push(['Penalty Amount', money(penaltyAmount)]);
@@ -178,7 +220,7 @@ export function generatePaymentReceiptBuffer({ payment, loan, borrower }) {
     ], 42, 336, 511);
 
     sectionTitle(doc, 'Loan Summary', 42, 464);
-    drawLoanSummaryBreakdown(doc, loan, 42, 494, 511);
+    drawLoanSummaryCards(doc, loan, 42, 494);
 
     drawReceiptFooter(doc);
 
@@ -223,7 +265,7 @@ export function generateLoanReceiptBuffer({ loan, borrower, agent }) {
     ], 42, 336, 511);
 
     sectionTitle(doc, 'Loan Summary', 42, 510);
-    drawLoanSummaryBreakdown(doc, loan, 42, 540, 511);
+    drawLoanSummaryCards(doc, loan, 42, 540);
 
     drawReceiptFooter(doc);
 

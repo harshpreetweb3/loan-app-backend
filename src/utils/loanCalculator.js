@@ -40,7 +40,7 @@ export function buildInstallmentSchedule({ totalPayable, duration, installmentTy
   return { installmentAmount, installments };
 }
 
-export function calculateLoanSchedule({ loanAmount, interestPercent, interestAmount, duration, installmentType, startDate, dateOfFinance, processingCharges = 0, processingFeeMode = 'deducted', dueDayOfMonth }) {
+export function calculateLoanSchedule({ loanAmount, interestPercent, interestAmount, duration, installmentType, startDate, dateOfFinance, processingCharges = 0, processingFeeMode = 'separate', dueDayOfMonth }) {
   const principal = Number(loanAmount);
   const interest = (principal * Number(interestPercent || 0) * Number(duration || 0)) / 100;
   const percent = Number(interestPercent || 0);
@@ -71,7 +71,7 @@ export function refreshLoanTotals(loan) {
   loan.paidInstallments = activeInstallments.filter((item) => item.status === 'paid').length;
   loan.remainingInstallments = activeInstallments.filter((item) => item.status !== 'paid').length;
   loan.totalPaid = roundMoney(loan.installments.reduce((sum, item) => sum + (item.paidAmount || 0) + (item.penaltyPaidAmount || 0), 0) + (loan.processingFeePaidAmount || 0));
-  const pendingProcessingFee = loan.processingFeeMode === 'separate' ? Math.max(Number(loan.processingCharges || 0) - Number(loan.processingFeePaidAmount || 0), 0) : 0;
+  const pendingProcessingFee = loan.processingFeeMode === 'separate' ? Math.max(Number(loan.processingCharges || 0) - Number(loan.processingFeePaidAmount || 0) - Number(loan.processingFeeWaivedAmount || 0), 0) : 0;
   const pendingPenalty = activeInstallments.reduce((sum, item) => sum + Math.max(Number(item.penaltyAmount || 0) - Number(item.penaltyPaidAmount || 0) - Number(item.penaltyWaivedAmount || 0), 0), 0);
   loan.status = loan.remainingInstallments === 0 && pendingProcessingFee <= 0 && pendingPenalty <= 0 ? 'completed' : 'active';
 }

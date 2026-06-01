@@ -20,7 +20,7 @@ function loanOutstanding(loan) {
   const activeInstallments = loan.installments.filter((item) => !item.convertedAt);
   const remainingInstallments = activeInstallments.reduce((sum, item) => sum + Math.max(Number(item.amount || 0) - Number(item.paidAmount || 0), 0), 0);
   const pendingPenalties = activeInstallments.reduce((sum, item) => sum + Math.max(Number(item.penaltyAmount || 0) - Number(item.penaltyPaidAmount || 0) - Number(item.penaltyWaivedAmount || 0), 0), 0);
-  const pendingProcessingFees = loan.processingFeeMode === 'separate' ? Math.max(Number(loan.processingCharges || 0) - Number(loan.processingFeePaidAmount || 0), 0) : 0;
+  const pendingProcessingFees = loan.processingFeeMode === 'separate' ? Math.max(Number(loan.processingCharges || 0) - Number(loan.processingFeePaidAmount || 0) - Number(loan.processingFeeWaivedAmount || 0), 0) : 0;
   return {
     remainingInstallments: roundMoney(remainingInstallments),
     pendingPenalties: roundMoney(pendingPenalties),

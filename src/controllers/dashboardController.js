@@ -42,6 +42,7 @@ export const getDashboard = asyncHandler(async (req, res) => {
   const isAgent = req.user.role === ROLES.AGENT;
   const ownerQuery = isAgent ? { createdBy: req.user._id } : {};
   const collectionOwnerQuery = isAgent ? { collectedBy: req.user._id } : {};
+  const dueOwnerQuery = {};
   const unpaidStatuses = ['pending', 'partial', 'overdue'];
   const overdueInstallment = {
     $elemMatch: {
@@ -61,18 +62,18 @@ export const getDashboard = asyncHandler(async (req, res) => {
   const [totalBorrowers, totalLoans, overdueLoans, todaysDue, myCollections, dailyDueLoans, overdueInstallmentLoans, recentPayments, allPayments, loanTotals] = await Promise.all([
     Borrower.countDocuments(isAgent ? { createdBy: req.user._id } : { createdAt: { $gte: rangeStart, $lte: rangeEnd } }),
     Loan.countDocuments({ ...ownerQuery, createdAt: { $gte: rangeStart, $lte: rangeEnd } }),
-    Loan.countDocuments({ ...ownerQuery, installments: overdueInstallment }),
-    Loan.countDocuments({ ...ownerQuery, installments: todayInstallment }),
+    Loan.countDocuments({ ...dueOwnerQuery, installments: overdueInstallment }),
+    Loan.countDocuments({ ...dueOwnerQuery, installments: todayInstallment }),
     Payment.aggregate([
       { $match: { collectedBy: req.user._id, createdAt: { $gte: todayStart, $lte: todayEnd } } },
       { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
     ]),
-    Loan.find({ ...ownerQuery, installments: todayInstallment })
+    Loan.find({ ...dueOwnerQuery, installments: todayInstallment })
       .populate('borrower')
       .populate('createdBy', 'name username')
       .limit(20)
       .sort({ createdAt: -1 }),
-    Loan.find({ ...ownerQuery, installments: overdueInstallment }).populate('borrower').populate('createdBy', 'name username').limit(20).sort({ createdAt: -1 }),
+    Loan.find({ ...dueOwnerQuery, installments: overdueInstallment }).populate('borrower').populate('createdBy', 'name username').limit(20).sort({ createdAt: -1 }),
     Payment.find({ ...collectionOwnerQuery, createdAt: { $gte: rangeStart, $lte: rangeEnd } }).populate('borrower').populate('collectedBy', 'name username').sort({ createdAt: -1 }).limit(8),
     Payment.aggregate([
       { $match: { ...collectionOwnerQuery, createdAt: { $gte: rangeStart, $lte: rangeEnd } } },

@@ -109,10 +109,11 @@ export const createPayment = asyncHandler(async (req, res) => {
     allocations = allocateInstallmentPayment(loan, installmentIds, amount);
   } else if (paymentCategory === 'processingFee') {
     if (loan.processingFeeMode !== 'separate') return res.status(400).json({ message: 'Processing fee is already deducted at loan creation' });
-    const pending = Math.max(roundMoney(Number(loan.processingCharges || 0) - Number(loan.processingFeePaidAmount || 0)), 0);
+    const pending = Math.max(roundMoney(Number(loan.processingCharges || 0) - Number(loan.processingFeePaidAmount || 0) - Number(loan.processingFeeWaivedAmount || 0)), 0);
     if (pending <= 0) return res.status(400).json({ message: 'No pending processing fee found' });
     if (amount > pending) return res.status(400).json({ message: 'Receipt amount is greater than pending processing fee' });
     loan.processingFeePaidAmount = roundMoney(Number(loan.processingFeePaidAmount || 0) + amount);
+    loan.processingFeeWaivedAmount = roundMoney(Number(loan.processingFeeWaivedAmount || 0) + Math.max(pending - amount, 0));
     allocations = [{ type: 'processingFee', amount }];
   } else if (paymentCategory === 'penalty') {
     allocations = allocatePenaltyPayment(loan, installmentIds, amount);
@@ -144,20 +145,34 @@ export const listPayments = asyncHandler(async (req, res) => {
   if (req.query.agent) query.collectedBy = req.query.agent;
   if (req.query.borrower) query.borrower = req.query.borrower;
   if (req.query.mode) query.mode = req.query.mode;
+  const statsQuery = { ...query };
   if (req.query.from || req.query.to) {
     query.createdAt = {};
     if (req.query.from) query.createdAt.$gte = new Date(req.query.from);
     if (req.query.to) query.createdAt.$lte = new Date(req.query.to);
   }
-  const payments = await Payment.find(query)
-    .populate('borrower')
-    .populate('loan')
-    .populate('collectedBy', 'name username')
-    .sort({ createdAt: -1 });
+  const monthStart = new Date();
+  monthStart.setDate(1);
+  monthStart.setHours(0, 0, 0, 0);
+  const nextMonthStart = new Date(monthStart);
+  nextMonthStart.setMonth(nextMonthStart.getMonth() + 1);
+  const [payments, statPayments] = await Promise.all([
+    Payment.find(query)
+      .populate('borrower')
+      .populate('loan')
+      .populate('collectedBy', 'name username')
+      .sort({ createdAt: -1 }),
+    Payment.find(statsQuery).select('amount createdAt')
+  ]);
+  const stats = statPayments.reduce((summary, payment) => {
+    summary.totalCollected += Number(payment.amount || 0);
+    if (payment.createdAt >= monthStart && payment.createdAt < nextMonthStart) summary.collectionThisMonth += Number(payment.amount || 0);
+    return summary;
+  }, { totalCollected: 0, collectionThisMonth: 0 });
   const filtered = req.query.borrowerName
     ? payments.filter((payment) => payment.borrower?.name?.toLowerCase().includes(String(req.query.borrowerName).toLowerCase()))
     : payments;
-  res.json({ payments: filtered });
+  res.json({ payments: filtered, stats });
 });
 
 export const updatePayment = asyncHandler(async (req, res) => {
