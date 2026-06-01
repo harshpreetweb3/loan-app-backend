@@ -6,9 +6,27 @@ import { buildInstallmentSchedule, calculateLoanSchedule, refreshLoanTotals } fr
 import { generateLoanReceiptBuffer, generateNocPdf } from '../services/pdfService.js';
 import { nextSequence } from '../utils/sequence.js';
 import { persistUploadedFile } from '../utils/cloudStorage.js';
+import { ROLES } from '../constants.js';
 
 function numberValue(value) {
   return Number(value);
+}
+
+function roundMoney(value) {
+  return Math.round(Number(value || 0) * 100) / 100;
+}
+
+function loanOutstanding(loan) {
+  const activeInstallments = loan.installments.filter((item) => !item.convertedAt);
+  const remainingInstallments = activeInstallments.reduce((sum, item) => sum + Math.max(Number(item.amount || 0) - Number(item.paidAmount || 0), 0), 0);
+  const pendingPenalties = activeInstallments.reduce((sum, item) => sum + Math.max(Number(item.penaltyAmount || 0) - Number(item.penaltyPaidAmount || 0) - Number(item.penaltyWaivedAmount || 0), 0), 0);
+  const pendingProcessingFees = loan.processingFeeMode === 'separate' ? Math.max(Number(loan.processingCharges || 0) - Number(loan.processingFeePaidAmount || 0), 0) : 0;
+  return {
+    remainingInstallments: roundMoney(remainingInstallments),
+    pendingPenalties: roundMoney(pendingPenalties),
+    pendingProcessingFees: roundMoney(pendingProcessingFees),
+    remainingDueAmount: roundMoney(remainingInstallments + pendingPenalties + pendingProcessingFees)
+  };
 }
 
 function validateLoanPayload(payload) {
@@ -17,6 +35,7 @@ function validateLoanPayload(payload) {
   if (!['personal', 'vehicle'].includes(payload.loanCategory)) errors.push('Loan type is required');
   if (!numberValue(payload.loanAmount) || numberValue(payload.loanAmount) <= 0) errors.push('Loan amount is required');
   if (payload.interestPercent === undefined || payload.interestPercent === '' || numberValue(payload.interestPercent) < 0) errors.push('Interest percentage is required');
+  if (!payload.chequeNumber) errors.push('Cheque number is required');
   if (!numberValue(payload.duration) || numberValue(payload.duration) <= 0) errors.push('Duration is required');
   if (!['daily', 'monthly'].includes(payload.installmentType)) errors.push('Installment type is required');
   if (!payload.startDate && !payload.dateOfFinance) errors.push('Finance date is required');
@@ -94,7 +113,15 @@ export const listLoans = asyncHandler(async (req, res) => {
   const filtered = req.query.borrowerName
     ? loans.filter((loan) => loan.borrower?.name?.toLowerCase().includes(String(req.query.borrowerName).toLowerCase()))
     : loans;
-  res.json({ loans: filtered });
+  const monthStart = new Date();
+  monthStart.setDate(1);
+  monthStart.setHours(0, 0, 0, 0);
+  const statsQuery = req.query.scope === 'mine' ? { createdBy: req.user._id } : {};
+  const [totalLoansGiven, loansGivenThisMonth] = await Promise.all([
+    Loan.countDocuments(statsQuery),
+    Loan.countDocuments({ ...statsQuery, createdAt: { $gte: monthStart } })
+  ]);
+  res.json({ loans: filtered, stats: { totalLoansGiven, loansGivenThisMonth } });
 });
 
 export const getLoan = asyncHandler(async (req, res) => {
@@ -113,7 +140,7 @@ export const updateLoan = asyncHandler(async (req, res) => {
   const nextPayload = { ...loan.toObject(), ...payload, installmentCountMode: 'manual' };
   const errors = validateLoanPayload(nextPayload);
   if (errors.length) return res.status(400).json({ message: errors[0], errors });
-  const fields = ['loanAmount', 'interestPercent', 'interestAmount', 'duration', 'installmentType', 'processingCharges', 'startDate', 'dateOfFinance', 'dueDayOfMonth', 'loanCategory', 'guarantor', 'vehicle'];
+  const fields = ['loanAmount', 'interestPercent', 'interestAmount', 'chequeNumber', 'duration', 'installmentType', 'processingCharges', 'startDate', 'dateOfFinance', 'dueDayOfMonth', 'loanCategory', 'guarantor', 'vehicle'];
   const changes = buildChanges(loan, payload, fields);
   if (changes.length) {
     const schedule = calculateLoanSchedule(nextPayload);
@@ -236,4 +263,46 @@ export const generateNoc = asyncHandler(async (req, res) => {
   loan.noc.filePath = filePath;
   await loan.save();
   res.json({ filePath, loan });
+});
+
+export const closeLoan = asyncHandler(async (req, res) => {
+  const loan = await Loan.findById(req.params.id);
+  if (!loan) return res.status(404).json({ message: 'Loan not found' });
+  const outstanding = loanOutstanding(loan);
+  if (outstanding.remainingDueAmount > 0) {
+    return res.status(400).json({ message: 'Loan cannot be closed while amounts are pending', outstanding });
+  }
+  loan.status = 'completed';
+  loan.closure = { closedAt: new Date(), closedBy: req.user._id };
+  if (loan.noc.status === 'none') {
+    loan.noc.status = 'approved';
+    loan.noc.reviewedBy = req.user._id;
+    loan.noc.reviewedAt = new Date();
+  }
+  await loan.save();
+  res.json({ loan, outstanding, canGenerateNoc: true });
+});
+
+export const getLoanClosureStatus = asyncHandler(async (req, res) => {
+  const loan = await Loan.findById(req.params.id);
+  if (!loan) return res.status(404).json({ message: 'Loan not found' });
+  const outstanding = loanOutstanding(loan);
+  res.json({ outstanding, canClose: outstanding.remainingDueAmount <= 0, canGenerateNoc: outstanding.remainingDueAmount <= 0 });
+});
+
+export const waivePenalty = asyncHandler(async (req, res) => {
+  if (req.user.role !== ROLES.ADMIN) return res.status(403).json({ message: 'Admin access required' });
+  const loan = await Loan.findById(req.params.id);
+  if (!loan) return res.status(404).json({ message: 'Loan not found' });
+  const { installmentId, amount, reason } = req.body;
+  const installment = loan.installments.id(installmentId);
+  if (!installment) return res.status(404).json({ message: 'Installment not found' });
+  const pending = Math.max(Number(installment.penaltyAmount || 0) - Number(installment.penaltyPaidAmount || 0) - Number(installment.penaltyWaivedAmount || 0), 0);
+  const waiverAmount = roundMoney(amount === 'full' ? pending : Number(amount));
+  if (!waiverAmount || waiverAmount <= 0 || waiverAmount > pending) return res.status(400).json({ message: 'Valid waiver amount is required' });
+  installment.penaltyWaivedAmount = roundMoney(Number(installment.penaltyWaivedAmount || 0) + waiverAmount);
+  loan.penaltyWaivers.push({ installmentId, amount: waiverAmount, reason, waivedBy: req.user._id });
+  refreshLoanTotals(loan);
+  await loan.save();
+  res.json({ loan, waivedAmount: waiverAmount, outstanding: loanOutstanding(loan) });
 });

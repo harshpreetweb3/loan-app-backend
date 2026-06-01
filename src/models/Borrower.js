@@ -30,7 +30,7 @@ const borrowerSchema = new mongoose.Schema(
     bank: {
       bankName: { type: String, required: true, trim: true },
       accountNumber: { type: String, required: true, trim: true },
-      chequeNumber: { type: String, required: true, trim: true }
+      chequeNumber: { type: String, trim: true }
     },
     vehicle: {
       rcPhotoPath: String,

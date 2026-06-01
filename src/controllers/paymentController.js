@@ -4,22 +4,121 @@ import { generatePaymentReceiptBuffer } from '../services/pdfService.js';
 import { buildChanges, writeAudit } from '../utils/audit.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { refreshLoanTotals } from '../utils/loanCalculator.js';
+import { applyPenaltyToLoan } from '../utils/penalty.js';
+
+function roundMoney(value) {
+  return Math.round(Number(value || 0) * 100) / 100;
+}
+
+function activeInstallments(loan) {
+  return loan.installments
+    .filter((item) => !item.convertedAt && item.status !== 'paid')
+    .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
+}
+
+function installmentRemaining(item) {
+  return Math.max(roundMoney(Number(item.amount || 0) - Number(item.paidAmount || 0)), 0);
+}
+
+function penaltyRemaining(item) {
+  return Math.max(roundMoney(Number(item.penaltyAmount || 0) - Number(item.penaltyPaidAmount || 0) - Number(item.penaltyWaivedAmount || 0)), 0);
+}
+
+function updateInstallmentStatus(item) {
+  if (installmentRemaining(item) <= 0) {
+    item.status = penaltyRemaining(item) <= 0 ? 'paid' : 'overdue';
+    if (item.status === 'paid') item.paidAt = new Date();
+  } else if (Number(item.paidAmount || 0) > 0) {
+    item.status = 'partial';
+  }
+}
+
+function allocateInstallmentPayment(loan, selectedIds, amount) {
+  let remaining = roundMoney(amount);
+  const selectedSet = new Set((selectedIds || []).map(String));
+  const ordered = activeInstallments(loan);
+  const preferred = selectedSet.size ? ordered.filter((item) => selectedSet.has(String(item._id))) : ordered;
+  const fallback = ordered.filter((item) => !selectedSet.has(String(item._id)));
+  const allocations = [];
+
+  [...preferred, ...fallback].forEach((item) => {
+    if (remaining <= 0) return;
+    const due = installmentRemaining(item);
+    if (due <= 0) return;
+    const applied = Math.min(due, remaining);
+    item.paidAmount = roundMoney(Number(item.paidAmount || 0) + applied);
+    remaining = roundMoney(remaining - applied);
+    allocations.push({ type: 'installment', installmentId: item._id, amount: applied });
+    updateInstallmentStatus(item);
+  });
+
+  if (!allocations.length) {
+    const error = new Error('No pending installment amount found');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (remaining > 0) {
+    const error = new Error('Receipt amount is greater than pending installment amount');
+    error.statusCode = 400;
+    throw error;
+  }
+  return allocations;
+}
+
+function allocatePenaltyPayment(loan, selectedIds, amount) {
+  let remaining = roundMoney(amount);
+  const selectedSet = new Set((selectedIds || []).map(String));
+  const ordered = activeInstallments(loan).filter((item) => penaltyRemaining(item) > 0);
+  const targets = selectedSet.size ? ordered.filter((item) => selectedSet.has(String(item._id))) : ordered;
+  const allocations = [];
+
+  targets.forEach((item) => {
+    if (remaining <= 0) return;
+    const due = penaltyRemaining(item);
+    const applied = Math.min(due, remaining);
+    item.penaltyPaidAmount = roundMoney(Number(item.penaltyPaidAmount || 0) + applied);
+    remaining = roundMoney(remaining - applied);
+    allocations.push({ type: 'penalty', installmentId: item._id, amount: applied });
+    updateInstallmentStatus(item);
+  });
+
+  if (!allocations.length) {
+    const error = new Error('No pending penalty amount found');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (remaining > 0) {
+    const error = new Error('Receipt amount is greater than pending penalty amount');
+    error.statusCode = 400;
+    throw error;
+  }
+  return allocations;
+}
 
 export const createPayment = asyncHandler(async (req, res) => {
-  const { loanId, installmentIds = [], mode, notes, chequeNumber } = req.body;
+  const { loanId, installmentIds = [], mode, notes, chequeNumber, paymentCategory = 'installment' } = req.body;
+  const amount = roundMoney(req.body.amount);
+  if (!amount || amount <= 0) return res.status(400).json({ message: 'Receipt amount is required' });
   if (mode === 'cheque' && !String(chequeNumber || '').trim()) return res.status(400).json({ message: 'Cheque number is required' });
   const loan = await Loan.findById(loanId).populate('borrower');
   if (!loan) return res.status(404).json({ message: 'Loan not found' });
 
-  const selected = loan.installments.filter((item) => installmentIds.includes(String(item._id)) && item.status !== 'paid' && !item.convertedAt);
-  if (!selected.length) return res.status(400).json({ message: 'Select at least one unpaid installment' });
-
-  const amount = selected.reduce((sum, item) => sum + Math.max(item.amount + (item.penaltyAmount || 0) - (item.paidAmount || 0), 0), 0);
-  selected.forEach((item) => {
-    item.paidAmount = item.amount + (item.penaltyAmount || 0);
-    item.status = 'paid';
-    item.paidAt = new Date();
-  });
+  await applyPenaltyToLoan(loan);
+  let allocations = [];
+  if (paymentCategory === 'installment') {
+    allocations = allocateInstallmentPayment(loan, installmentIds, amount);
+  } else if (paymentCategory === 'processingFee') {
+    if (loan.processingFeeMode !== 'separate') return res.status(400).json({ message: 'Processing fee is already deducted at loan creation' });
+    const pending = Math.max(roundMoney(Number(loan.processingCharges || 0) - Number(loan.processingFeePaidAmount || 0)), 0);
+    if (pending <= 0) return res.status(400).json({ message: 'No pending processing fee found' });
+    if (amount > pending) return res.status(400).json({ message: 'Receipt amount is greater than pending processing fee' });
+    loan.processingFeePaidAmount = roundMoney(Number(loan.processingFeePaidAmount || 0) + amount);
+    allocations = [{ type: 'processingFee', amount }];
+  } else if (paymentCategory === 'penalty') {
+    allocations = allocatePenaltyPayment(loan, installmentIds, amount);
+  } else {
+    return res.status(400).json({ message: 'Payment category is required' });
+  }
   refreshLoanTotals(loan);
   await loan.save();
 
@@ -27,9 +126,11 @@ export const createPayment = asyncHandler(async (req, res) => {
     borrower: loan.borrower._id,
     loan: loan._id,
     amount,
+    paymentCategory,
     mode,
     chequeNumber: mode === 'cheque' ? chequeNumber : undefined,
     installmentIds,
+    allocations,
     collectedBy: req.user._id,
     notes
   });
@@ -77,7 +178,7 @@ export const generateReceipt = asyncHandler(async (req, res) => {
   if (!payment) return res.status(404).json({ message: 'Payment not found' });
   const pdf = await generatePaymentReceiptBuffer({ payment, loan: payment.loan, borrower: payment.borrower });
   res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `inline; filename="payment-receipt-${payment._id}.pdf"`);
+  res.setHeader('Content-Disposition', `inline; filename="receipt-${payment._id}.pdf"`);
   res.setHeader('Content-Length', pdf.length);
   res.send(pdf);
 });

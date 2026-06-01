@@ -54,7 +54,7 @@ function drawReceiptShell(doc, { title, number, date }) {
   doc.rect(0, 0, 612, 116).fill(receiptTheme.primary);
   doc.rect(0, 104, 612, 12).fill(receiptTheme.secondary);
 
-  doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(21).text('New Satluj Finance', 42, 32);
+  doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(21).text('Satluj Finance', 42, 32);
   doc.font('Helvetica-Bold').fontSize(13).fillColor('#FFFFFF').text(title, 42, 72);
 
   doc.roundedRect(382, 28, 172, 60, 6).fill('#FFFFFF');
@@ -94,8 +94,42 @@ function drawAmountCards(doc, cards, x, y) {
 
 function drawReceiptFooter(doc) {
   doc.moveTo(42, 692).lineTo(553, 692).strokeColor(receiptTheme.line).lineWidth(1).stroke();
-  doc.fillColor(receiptTheme.muted).font('Helvetica').fontSize(8).text('This computer generated receipt confirms the recorded transaction in New Satluj Finance system.', 42, 706, { width: 330 });
+  doc.fillColor(receiptTheme.muted).font('Helvetica').fontSize(8).text('This computer generated receipt confirms the recorded transaction in Satluj Finance system.', 42, 706, { width: 330 });
   doc.fillColor(receiptTheme.ink).font('Helvetica-Bold').fontSize(9).text('Authorized Signatory', 410, 706, { width: 143, align: 'right' });
+}
+
+function loanPenaltyTotal(loan) {
+  return (loan.installments || []).reduce((sum, item) => sum + Number(item.penaltyAmount || 0), 0);
+}
+
+function loanTotalWithPenalty(loan) {
+  return Number(loan.loanAmount || 0) + Number(loan.interestAmount || 0) + Number(loan.processingCharges || 0) + loanPenaltyTotal(loan);
+}
+
+function drawLoanSummaryBreakdown(doc, loan, x, y, width) {
+  const totalAmount = loanTotalWithPenalty(loan);
+  const pendingAmount = Math.max(totalAmount - Number(loan.totalPaid || 0), 0);
+  const rows = [
+    ['Loan Amount', money(loan.loanAmount)],
+    ['Interest Amount', money(loan.interestAmount)],
+    ['Processing Fees', money(loan.processingCharges)]
+  ];
+  const penaltyAmount = loanPenaltyTotal(loan);
+  if (penaltyAmount > 0) rows.push(['Penalty Amount', money(penaltyAmount)]);
+  rows.push(['Total Amount', money(totalAmount)]);
+  rows.push(['Amount Paid So Far', money(loan.totalPaid)]);
+  rows.push(['Pending Amount', money(pendingAmount)]);
+
+  const rowHeight = 28;
+  rows.forEach(([label, value], index) => {
+    const rowY = y + index * rowHeight;
+    const isTotal = index === rows.length - 1;
+    if (isTotal) doc.moveTo(x, rowY).lineTo(x + width, rowY).strokeColor(receiptTheme.line).lineWidth(1).stroke();
+    doc.rect(x, rowY, width, rowHeight).fill(isTotal ? receiptTheme.pale : (index % 2 === 0 ? receiptTheme.soft : '#FFFFFF'));
+    doc.fillColor(isTotal ? receiptTheme.secondary : receiptTheme.muted).font(isTotal ? 'Helvetica-Bold' : 'Helvetica').fontSize(isTotal ? 10 : 9).text(label, x + 12, rowY + 9, { width: 220 });
+    doc.fillColor(isTotal ? receiptTheme.primary : receiptTheme.ink).font('Helvetica-Bold').fontSize(isTotal ? 11 : 9).text(value, x + 260, rowY + 9, { width: width - 272, align: 'right' });
+  });
+  doc.roundedRect(x, y, width, rows.length * rowHeight, 5).strokeColor(receiptTheme.line).lineWidth(1).stroke();
 }
 
 function writeDocument(filePath, writer) {
@@ -119,11 +153,10 @@ export function generatePaymentReceiptBuffer({ payment, loan, borrower }) {
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
 
-    const pendingAmount = Math.max(Number(loan.totalPayable || 0) - Number(loan.totalPaid || 0), 0);
     const mobile = (borrower.mobileNumbers || [borrower.phone]).filter(Boolean).join(', ');
 
     drawReceiptShell(doc, {
-      title: 'Payment Receipt',
+      title: 'Receipt',
       number: receiptNumber(payment._id),
       date: formatDateTime(payment.createdAt)
     });
@@ -136,20 +169,16 @@ export function generatePaymentReceiptBuffer({ payment, loan, borrower }) {
       ['Address', borrower.address]
     ], 42, 178, 511);
 
-    sectionTitle(doc, 'Loan Summary', 42, 306);
-    drawAmountCards(doc, [
-      { label: 'Loan Amount', value: money(loan.totalPayable), emphasis: true },
-      { label: 'Amount Paid So Far', value: money(loan.totalPaid) },
-      { label: 'Pending Amount', value: money(pendingAmount) }
-    ], 42, 336);
-
-    sectionTitle(doc, 'Payment Details', 42, 444);
+    sectionTitle(doc, 'Receipt Details', 42, 306);
     drawInfoGrid(doc, [
-      ['Payment Amount', money(payment.amount)],
-      ['Payment Mode', `${payment.mode}${payment.chequeNumber ? ` (${payment.chequeNumber})` : ''}`],
+      ['Receipt Amount', money(payment.amount)],
+      ['Receipt Mode', `${payment.mode}${payment.chequeNumber ? ` (${payment.chequeNumber})` : ''}`],
       ['Collected By', payment.collectedBy?.name || payment.collectedBy?.username],
       ['Notes', payment.notes]
-    ], 42, 474, 511);
+    ], 42, 336, 511);
+
+    sectionTitle(doc, 'Loan Summary', 42, 464);
+    drawLoanSummaryBreakdown(doc, loan, 42, 494, 511);
 
     drawReceiptFooter(doc);
 
@@ -167,7 +196,6 @@ export function generateLoanReceiptBuffer({ loan, borrower, agent }) {
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
 
-    const pendingAmount = Math.max(Number(loan.totalPayable || 0) - Number(loan.totalPaid || 0), 0);
     const mobile = (borrower.mobileNumbers || [borrower.phone]).filter(Boolean).join(', ');
 
     drawReceiptShell(doc, {
@@ -184,22 +212,18 @@ export function generateLoanReceiptBuffer({ loan, borrower, agent }) {
       ['Address', borrower.address]
     ], 42, 178, 511);
 
-    sectionTitle(doc, 'Loan Summary', 42, 306);
-    drawAmountCards(doc, [
-      { label: 'Loan Amount', value: money(loan.totalPayable), emphasis: true },
-      { label: 'Amount Paid So Far', value: money(loan.totalPaid) },
-      { label: 'Pending Amount', value: money(pendingAmount) }
-    ], 42, 336);
-
-    sectionTitle(doc, 'Loan Details', 42, 444);
+    sectionTitle(doc, 'Receipt Details', 42, 306);
     drawInfoGrid(doc, [
       ['Loan Type', loan.loanCategory],
       ['Installment Type', loan.installmentType],
       ['Installment Amount', money(loan.installmentAmount)],
       ['Total Installments', loan.totalInstallments],
-      ['Processing Charges', money(loan.processingCharges)],
+      ['Cheque Number', loan.chequeNumber],
       ['Created By', agent?.name || agent?.username]
-    ], 42, 474, 511);
+    ], 42, 336, 511);
+
+    sectionTitle(doc, 'Loan Summary', 42, 510);
+    drawLoanSummaryBreakdown(doc, loan, 42, 540, 511);
 
     drawReceiptFooter(doc);
 
@@ -210,7 +234,7 @@ export function generateLoanReceiptBuffer({ loan, borrower, agent }) {
 export async function generateNocPdf({ loan, borrower }) {
   const filePath = path.join(nocDir, `noc-${loan._id}.pdf`);
   return writeDocument(filePath, (doc) => {
-    doc.fontSize(20).text('New Satluj Finance', { align: 'center' });
+    doc.fontSize(20).text('Satluj Finance', { align: 'center' });
     doc.fontSize(16).text('No Objection Certificate', { align: 'center' }).moveDown(2);
     doc.fontSize(12).text(`This is to certify that ${borrower.name}, ${borrower.fatherOrCareOf}, has completed all payments for loan ${loan._id}.`);
     doc.moveDown().text(`Loan Amount: ${money(loan.loanAmount)}`);

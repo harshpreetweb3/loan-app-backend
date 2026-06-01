@@ -8,6 +8,8 @@ const installmentSchema = new mongoose.Schema(
     amount: Number,
     paidAmount: { type: Number, default: 0 },
     penaltyAmount: { type: Number, default: 0 },
+    penaltyPaidAmount: { type: Number, default: 0 },
+    penaltyWaivedAmount: { type: Number, default: 0 },
     status: { type: String, enum: ['pending', 'paid', 'partial', 'overdue'], default: 'pending' },
     paidAt: Date,
     convertedAt: Date
@@ -49,10 +51,13 @@ const loanSchema = new mongoose.Schema(
     loanAmount: { type: Number, required: true, min: 1 },
     interestPercent: { type: Number, required: true, min: 0 },
     interestAmount: { type: Number, default: 0 },
+    chequeNumber: { type: String, trim: true },
     duration: { type: Number, required: true, min: 1 },
     installmentType: { type: String, enum: INSTALLMENT_TYPES, required: true },
     installmentAmount: { type: Number, required: true },
     processingCharges: { type: Number, default: 0 },
+    processingFeeMode: { type: String, enum: ['deducted', 'separate'], default: 'deducted' },
+    processingFeePaidAmount: { type: Number, default: 0 },
     startDate: { type: Date, required: true },
     dateOfFinance: { type: Date, default: Date.now },
     dueDayOfMonth: { type: Number, min: 1, max: 31 },
@@ -78,6 +83,17 @@ const loanSchema = new mongoose.Schema(
       rejectionReason: String,
       filePath: String
     },
+    closure: {
+      closedAt: Date,
+      closedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
+    },
+    penaltyWaivers: [{
+      installmentId: mongoose.Schema.Types.ObjectId,
+      amount: Number,
+      reason: String,
+      waivedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+      waivedAt: { type: Date, default: Date.now }
+    }],
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true }
   },
   { timestamps: true }

@@ -3,12 +3,15 @@ import {
   createLoan,
   generateLoanReceipt,
   generateNoc,
+  getLoanClosureStatus,
   getLoan,
   listLoans,
   requestNoc,
   reviewNoc,
+  closeLoan,
   switchInstallmentType,
-  updateLoan
+  updateLoan,
+  waivePenalty
 } from '../controllers/loanController.js';
 import { adminOnly, protect } from '../middleware/authMiddleware.js';
 import { uploadLoanFiles, validateProofFileSizes } from '../middleware/uploadMiddleware.js';
@@ -20,6 +23,9 @@ router.route('/').get(listLoans).post(uploadLoanFiles, validateProofFileSizes, c
 router.route('/:id').get(getLoan).put(adminOnly, uploadLoanFiles, validateProofFileSizes, updateLoan);
 router.patch('/:id/installment-type', adminOnly, switchInstallmentType);
 router.post('/:id/receipt', generateLoanReceipt);
+router.get('/:id/closure-status', getLoanClosureStatus);
+router.post('/:id/close', closeLoan);
+router.post('/:id/penalty-waiver', adminOnly, waivePenalty);
 router.post('/:id/noc/request', requestNoc);
 router.post('/:id/noc/review', adminOnly, reviewNoc);
 router.post('/:id/noc/generate', generateNoc);

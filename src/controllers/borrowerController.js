@@ -40,6 +40,7 @@ function validateBorrowerPayload(payload, { requirePhoto = false } = {}) {
   const mobileNumbers = (payload.mobileNumbers || []).filter(Boolean);
 
   if (isBlank(payload.name)) errors.push('Borrower name is required');
+  if (isBlank(payload.fatherOrCareOf)) errors.push('Father name or care of is required');
   if (isBlank(payload.address)) errors.push('Borrower address is required');
   if (!mobileNumbers.length) errors.push('At least one mobile number is required');
   if (mobileNumbers.some((number) => !/^[6-9]\d{9}$/.test(String(number)))) errors.push('Please enter a valid mobile number');
@@ -47,7 +48,6 @@ function validateBorrowerPayload(payload, { requirePhoto = false } = {}) {
   if (requirePhoto && isBlank(payload.proof1Path)) errors.push('Borrower proof 1 is required');
   if (isBlank(payload.bank?.bankName)) errors.push('Bank name is required');
   if (isBlank(payload.bank?.accountNumber)) errors.push('Account number is required');
-  if (isBlank(payload.bank?.chequeNumber)) errors.push('Cheque number is required');
 
   return errors;
 }
@@ -75,7 +75,13 @@ export const listBorrowers = asyncHandler(async (req, res) => {
     query.$or = [{ loanCategory: req.query.loanCategory }, { _id: { $in: loans } }];
   }
   const borrowers = await Borrower.find(query).populate('createdBy', 'name username').sort({ createdAt: -1 });
-  res.json({ borrowers });
+  const borrowerIds = borrowers.map((borrower) => borrower._id);
+  const activeLoanBorrowerIds = await Loan.find({ borrower: { $in: borrowerIds }, status: { $ne: 'completed' } }).distinct('borrower');
+  const activeSet = new Set(activeLoanBorrowerIds.map(String));
+  const withStatus = borrowers
+    .map((borrower) => ({ ...borrower.toObject(), loanStatus: activeSet.has(String(borrower._id)) ? 'active' : 'inactive' }))
+    .filter((borrower) => !req.query.loanStatus || req.query.loanStatus === 'all' || borrower.loanStatus === req.query.loanStatus);
+  res.json({ borrowers: withStatus });
 });
 
 export const getBorrower = asyncHandler(async (req, res) => {
