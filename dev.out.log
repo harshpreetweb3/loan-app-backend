@@ -3,3 +3,4 @@
 > node src/server.js
 
 MongoDB connected
+Loan API running on port 5000
