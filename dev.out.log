@@ -72,3 +72,8 @@ Loan API running on port 5000
 [0mGET /api/payments? [36m304[0m 3885.513 ms - -[0m
 [0mGET /api/loans?status=active [36m304[0m 2372.011 ms - -[0m
 [0mGET /api/loans?status=active [36m304[0m 328.873 ms - -[0m
+[0mPOST /api/auth/login [32m200[0m 772.963 ms - 327[0m
+[0mGET /api/dashboard?range=overall [32m200[0m 839.101 ms - 434265[0m
+[0mGET /api/dashboard?range=overall [36m304[0m 1603.967 ms - -[0m
+[0mGET /api/dashboard/installments-due [32m200[0m 1876.315 ms - 48949[0m
+[0mGET /api/dashboard/installments-due [36m304[0m 458.906 ms - -[0m
