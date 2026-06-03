@@ -19,6 +19,8 @@ function endOfDay(date = new Date()) {
 
 function rangeFromQuery(query) {
   const now = new Date();
+  if (query.range === 'overall') return { start: new Date(0), end: endOfDay(now) };
+  if (query.range === 'today') return { start: startOfDay(now), end: endOfDay(now) };
   if (query.range === 'week') {
     const start = startOfDay(now);
     start.setDate(start.getDate() - start.getDay());
@@ -59,9 +61,11 @@ export const getDashboard = asyncHandler(async (req, res) => {
     }
   };
 
-  const [totalBorrowers, totalLoans, overdueLoans, todaysDue, myCollections, dailyDueLoans, overdueInstallmentLoans, recentPayments, allPayments, loanTotals] = await Promise.all([
+  const [totalBorrowers, totalLoans, totalActiveLoans, totalClosedLoans, overdueLoans, todaysDue, myCollections, dailyDueLoans, overdueInstallmentLoans, recentPayments, allPayments, loanTotals] = await Promise.all([
     Borrower.countDocuments(isAgent ? { createdBy: req.user._id } : { createdAt: { $gte: rangeStart, $lte: rangeEnd } }),
     Loan.countDocuments({ ...ownerQuery, createdAt: { $gte: rangeStart, $lte: rangeEnd } }),
+    Loan.countDocuments({ ...ownerQuery, status: 'active', createdAt: { $gte: rangeStart, $lte: rangeEnd } }),
+    Loan.countDocuments({ ...ownerQuery, status: 'completed', createdAt: { $gte: rangeStart, $lte: rangeEnd } }),
     Loan.countDocuments({ ...dueOwnerQuery, installments: overdueInstallment }),
     Loan.countDocuments({ ...dueOwnerQuery, installments: todayInstallment }),
     Payment.aggregate([
@@ -113,6 +117,8 @@ export const getDashboard = asyncHandler(async (req, res) => {
     stats: {
       totalBorrowers,
       totalLoans,
+      totalActiveLoans,
+      totalClosedLoans,
       overdueLoans,
       todaysDue,
       totalCollectedAmount: allPayments[0]?.totalCollected || 0,
