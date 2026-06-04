@@ -69,12 +69,14 @@ function allocatePenaltyPayment(loan, selectedIds, amount) {
   let remaining = roundMoney(amount);
   const selectedSet = new Set((selectedIds || []).map(String));
   const ordered = activeInstallments(loan).filter((item) => penaltyRemaining(item) > 0);
-  const targets = selectedSet.size ? ordered.filter((item) => selectedSet.has(String(item._id))) : ordered;
+  const preferred = selectedSet.size ? ordered.filter((item) => selectedSet.has(String(item._id))) : ordered;
+  const fallback = ordered.filter((item) => !selectedSet.has(String(item._id)));
   const allocations = [];
 
-  targets.forEach((item) => {
+  [...preferred, ...fallback].forEach((item) => {
     if (remaining <= 0) return;
     const due = penaltyRemaining(item);
+    if (due <= 0) return;
     const applied = Math.min(due, remaining);
     item.penaltyPaidAmount = roundMoney(Number(item.penaltyPaidAmount || 0) + applied);
     remaining = roundMoney(remaining - applied);
