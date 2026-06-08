@@ -1,7 +1,4 @@
-import fs from 'fs';
-import path from 'path';
 import PDFDocument from 'pdfkit';
-import { nocDir, publicPath } from '../utils/storage.js';
 
 function money(value) {
   return `Rs. ${Number(value || 0).toFixed(2)}`;
@@ -44,6 +41,11 @@ function receiptNumber(value) {
   const valueNumber = Number.parseInt(hex.slice(-6), 16);
   const suffix = Number.isFinite(valueNumber) ? ((valueNumber % 999) + 1) : 1;
   return `RCPT-${String(suffix).padStart(3, '0')}`;
+}
+
+function formatLoanId(value) {
+  if (!value) return 'N/A';
+  return `LN-${String(value).slice(-6).toUpperCase()}`;
 }
 
 function textValue(value) {
@@ -174,18 +176,6 @@ function drawLoanSummaryBreakdown(doc, loan, x, y, width) {
   doc.roundedRect(x, y, width, rows.length * rowHeight, 5).strokeColor(receiptTheme.line).lineWidth(1).stroke();
 }
 
-function writeDocument(filePath, writer) {
-  return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ margin: 42 });
-    const stream = fs.createWriteStream(filePath);
-    doc.pipe(stream);
-    writer(doc);
-    doc.end();
-    stream.on('finish', () => resolve(publicPath(filePath)));
-    stream.on('error', reject);
-  });
-}
-
 export function generatePaymentReceiptBuffer({ payment, loan, borrower }) {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ margin: 42 });
@@ -273,15 +263,26 @@ export function generateLoanReceiptBuffer({ loan, borrower, agent }) {
   });
 }
 
-export async function generateNocPdf({ loan, borrower }) {
-  const filePath = path.join(nocDir, `noc-${loan._id}.pdf`);
-  return writeDocument(filePath, (doc) => {
+export function generateNocPdfBuffer({ loan, borrower }) {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ margin: 42 });
+    const chunks = [];
+    const borrowerName = borrower?.name || 'Borrower';
+    const fatherOrCareOf = String(borrower?.fatherOrCareOf || '').trim();
+    const borrowerText = [borrowerName, fatherOrCareOf].filter(Boolean).join(', ');
+    const displayLoanId = formatLoanId(loan._id);
+
+    doc.on('data', (chunk) => chunks.push(chunk));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
     doc.fontSize(20).text('Satluj Finance', { align: 'center' });
     doc.fontSize(16).text('No Objection Certificate', { align: 'center' }).moveDown(2);
-    doc.fontSize(12).text(`This is to certify that ${borrower.name}, ${borrower.fatherOrCareOf}, has completed all payments for loan ${loan._id}.`);
+    doc.fontSize(12).text(`This is to certify that ${borrowerText} has completed all payments for loan ${displayLoanId}.`);
     doc.moveDown().text(`Loan Amount: ${money(loan.loanAmount)}`);
     doc.text(`Total Paid: ${money(loan.totalPaid)}`);
     doc.text(`Completion Date: ${formatDate(new Date())}`);
     doc.moveDown(3).text('Authorized Signatory');
+    doc.end();
   });
 }

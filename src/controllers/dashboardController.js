@@ -37,6 +37,26 @@ function rangeFromQuery(query) {
   return { start: startOfDay(now), end: endOfDay(now) };
 }
 
+function roundMoney(value) {
+  return Math.round(Number(value || 0) * 100) / 100;
+}
+
+function principalRemaining(installment) {
+  return Math.max(roundMoney(Number(installment.amount || 0) - Number(installment.paidAmount || 0)), 0);
+}
+
+function penaltyRemaining(installment) {
+  return Math.max(roundMoney(Number(installment.penaltyAmount || 0) - Number(installment.penaltyPaidAmount || 0) - Number(installment.penaltyWaivedAmount || 0)), 0);
+}
+
+function isTodayInstallment(item, todayStart, todayEnd) {
+  return !item.convertedAt && item.dueDate >= todayStart && item.dueDate <= todayEnd && principalRemaining(item) > 0;
+}
+
+function isOverdueInstallment(item, todayStart) {
+  return !item.convertedAt && item.dueDate < todayStart && principalRemaining(item) > 0;
+}
+
 export const getDashboard = asyncHandler(async (req, res) => {
   const todayStart = startOfDay();
   const todayEnd = endOfDay();
@@ -61,7 +81,7 @@ export const getDashboard = asyncHandler(async (req, res) => {
     }
   };
 
-  const [totalBorrowers, totalLoans, totalActiveLoans, totalClosedLoans, overdueLoans, todaysDue, myCollections, dailyDueLoans, overdueInstallmentLoans, recentPayments, allPayments, loanTotals] = await Promise.all([
+  const [totalBorrowers, totalLoans, totalActiveLoans, totalClosedLoans, _overdueLoans, _todaysDue, myCollections, dailyDueLoans, overdueInstallmentLoans, recentPayments, allPayments, loanTotals] = await Promise.all([
     Borrower.countDocuments(isAgent ? { createdBy: req.user._id } : { createdAt: { $gte: rangeStart, $lte: rangeEnd } }),
     Loan.countDocuments({ ...ownerQuery, createdAt: { $gte: rangeStart, $lte: rangeEnd } }),
     Loan.countDocuments({ ...ownerQuery, status: 'active', createdAt: { $gte: rangeStart, $lte: rangeEnd } }),
@@ -75,9 +95,8 @@ export const getDashboard = asyncHandler(async (req, res) => {
     Loan.find({ ...dueOwnerQuery, installments: todayInstallment })
       .populate('borrower')
       .populate('createdBy', 'name username')
-      .limit(20)
       .sort({ createdAt: -1 }),
-    Loan.find({ ...dueOwnerQuery, installments: overdueInstallment }).populate('borrower').populate('createdBy', 'name username').limit(20).sort({ createdAt: -1 }),
+    Loan.find({ ...dueOwnerQuery, installments: overdueInstallment }).populate('borrower').populate('createdBy', 'name username').sort({ createdAt: -1 }),
     Payment.find({ ...collectionOwnerQuery, createdAt: { $gte: rangeStart, $lte: rangeEnd } }).populate('borrower').populate('collectedBy', 'name username').sort({ createdAt: -1 }).limit(8),
     Payment.aggregate([
       { $match: { ...collectionOwnerQuery, createdAt: { $gte: rangeStart, $lte: rangeEnd } } },
@@ -97,19 +116,19 @@ export const getDashboard = asyncHandler(async (req, res) => {
   const dailyDues = dailyDueLoans
     .map((loan) => ({
       loan,
-      dueInstallments: loan.installments.filter((item) => !item.convertedAt && item.dueDate >= todayStart && item.dueDate <= todayEnd && ['pending', 'partial'].includes(item.status))
+      dueInstallments: loan.installments.filter((item) => isTodayInstallment(item, todayStart, todayEnd))
     }))
     .filter(({ dueInstallments }) => dueInstallments.length > 0);
 
   const overdueInstallments = overdueInstallmentLoans
     .map((loan) => ({
       loan,
-      dueInstallments: loan.installments.filter((item) => !item.convertedAt && item.dueDate < todayStart && unpaidStatuses.includes(item.status))
+      dueInstallments: loan.installments.filter((item) => isOverdueInstallment(item, todayStart))
     }))
     .filter(({ dueInstallments }) => dueInstallments.length > 0);
 
-  const todaysDueAmount = dailyDues.reduce((sum, { dueInstallments }) => sum + dueInstallments.reduce((inner, item) => inner + Math.max(item.amount + (item.penaltyAmount || 0) - (item.paidAmount || 0), 0), 0), 0);
-  const totalOverdueLoanAmount = overdueInstallments.reduce((sum, { dueInstallments }) => sum + dueInstallments.reduce((inner, item) => inner + Math.max(item.amount + (item.penaltyAmount || 0) - (item.paidAmount || 0), 0), 0), 0);
+  const todaysDueAmount = dailyDues.reduce((sum, { dueInstallments }) => sum + dueInstallments.reduce((inner, item) => inner + principalRemaining(item), 0), 0);
+  const totalOverdueLoanAmount = overdueInstallments.reduce((sum, { dueInstallments }) => sum + dueInstallments.reduce((inner, item) => inner + principalRemaining(item) + penaltyRemaining(item), 0), 0);
   const overdueInstallmentCount = overdueInstallments.reduce((sum, item) => sum + item.dueInstallments.length, 0);
   const todaysInstallmentCount = dailyDues.reduce((sum, item) => sum + item.dueInstallments.length, 0);
 
@@ -119,8 +138,8 @@ export const getDashboard = asyncHandler(async (req, res) => {
       totalLoans,
       totalActiveLoans,
       totalClosedLoans,
-      overdueLoans,
-      todaysDue,
+      overdueLoans: overdueInstallments.length,
+      todaysDue: dailyDues.length,
       totalCollectedAmount: allPayments[0]?.totalCollected || 0,
       todaysCollectionAmount: allPayments[0]?.todayCollected || 0,
       todaysDueAmount,
@@ -178,14 +197,14 @@ export const getDueInstallments = asyncHandler(async (_req, res) => {
   const dailyDues = dailyDueLoans
     .map((loan) => ({
       loan,
-      dueInstallments: loan.installments.filter((item) => !item.convertedAt && item.dueDate >= todayStart && item.dueDate <= todayEnd && ['pending', 'partial'].includes(item.status))
+      dueInstallments: loan.installments.filter((item) => isTodayInstallment(item, todayStart, todayEnd))
     }))
     .filter(({ dueInstallments }) => dueInstallments.length > 0);
 
   const overdueInstallments = overdueInstallmentLoans
     .map((loan) => ({
       loan,
-      dueInstallments: loan.installments.filter((item) => !item.convertedAt && item.dueDate < todayStart && unpaidStatuses.includes(item.status))
+      dueInstallments: loan.installments.filter((item) => isOverdueInstallment(item, todayStart))
     }))
     .filter(({ dueInstallments }) => dueInstallments.length > 0);
 

@@ -3,7 +3,7 @@ import Borrower from '../models/Borrower.js';
 import { buildChanges, writeAudit } from '../utils/audit.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { buildInstallmentSchedule, calculateLoanSchedule, refreshLoanTotals } from '../utils/loanCalculator.js';
-import { generateLoanReceiptBuffer, generateNocPdf } from '../services/pdfService.js';
+import { generateLoanReceiptBuffer, generateNocPdfBuffer } from '../services/pdfService.js';
 import { nextSequence } from '../utils/sequence.js';
 import { persistUploadedFile } from '../utils/cloudStorage.js';
 import { ROLES } from '../constants.js';
@@ -14,6 +14,20 @@ function numberValue(value) {
 
 function roundMoney(value) {
   return Math.round(Number(value || 0) * 100) / 100;
+}
+
+function startOfDay(date = new Date()) {
+  const value = new Date(date);
+  value.setHours(0, 0, 0, 0);
+  return value;
+}
+
+function principalRemaining(installment) {
+  return Math.max(roundMoney(Number(installment.amount || 0) - Number(installment.paidAmount || 0)), 0);
+}
+
+function isUnpaidOverdueInstallment(installment, todayStart) {
+  return !installment.convertedAt && installment.dueDate < todayStart && principalRemaining(installment) > 0;
 }
 
 function loanOutstanding(loan) {
@@ -95,9 +109,18 @@ export const createLoan = asyncHandler(async (req, res) => {
 
 export const listLoans = asyncHandler(async (req, res) => {
   const query = {};
+  const todayStart = startOfDay();
   if (req.query.scope === 'mine') query.createdBy = req.user._id;
   if (req.query.status && req.query.status !== 'overdue') query.status = req.query.status;
-  if (req.query.status === 'overdue') query['installments.status'] = 'overdue';
+  if (req.query.status === 'overdue') {
+    query.installments = {
+      $elemMatch: {
+        convertedAt: null,
+        dueDate: { $lt: todayStart },
+        status: { $in: ['pending', 'partial', 'overdue'] }
+      }
+    };
+  }
   if (req.query.installmentType) query.installmentType = req.query.installmentType;
   if (req.query.agent) query.createdBy = req.query.agent;
   if (req.query.from || req.query.to) {
@@ -110,9 +133,12 @@ export const listLoans = asyncHandler(async (req, res) => {
     .populate('createdBy', 'name username')
     .populate('conversionHistory.convertedBy', 'name username role')
     .sort({ createdAt: -1 });
-  const filtered = req.query.borrowerName
-    ? loans.filter((loan) => loan.borrower?.name?.toLowerCase().includes(String(req.query.borrowerName).toLowerCase()))
+  const filteredByStatus = req.query.status === 'overdue'
+    ? loans.filter((loan) => loan.installments?.some((item) => isUnpaidOverdueInstallment(item, todayStart)))
     : loans;
+  const filtered = req.query.borrowerName
+    ? filteredByStatus.filter((loan) => loan.borrower?.name?.toLowerCase().includes(String(req.query.borrowerName).toLowerCase()))
+    : filteredByStatus;
   const monthStart = new Date();
   monthStart.setDate(1);
   monthStart.setHours(0, 0, 0, 0);
@@ -259,10 +285,11 @@ export const generateNoc = asyncHandler(async (req, res) => {
   const loan = await Loan.findById(req.params.id).populate('borrower');
   if (!loan) return res.status(404).json({ message: 'Loan not found' });
   if (loan.noc.status !== 'approved') return res.status(400).json({ message: 'NOC is not approved' });
-  const filePath = await generateNocPdf({ loan, borrower: loan.borrower });
-  loan.noc.filePath = filePath;
-  await loan.save();
-  res.json({ filePath, loan });
+  const pdf = await generateNocPdfBuffer({ loan, borrower: loan.borrower });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="noc-${loan._id}.pdf"`);
+  res.setHeader('Content-Length', pdf.length);
+  res.send(pdf);
 });
 
 export const closeLoan = asyncHandler(async (req, res) => {

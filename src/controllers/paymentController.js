@@ -33,10 +33,23 @@ function updateInstallmentStatus(item) {
   }
 }
 
+function validateSequentialInstallments(ordered, selectedSet) {
+  if (!selectedSet.size) return;
+  const payable = ordered.filter((item) => installmentRemaining(item) > 0);
+  const firstSkippedIndex = payable.findIndex((item) => !selectedSet.has(String(item._id)));
+  if (firstSkippedIndex === -1) return;
+  const hasLaterSelection = payable.slice(firstSkippedIndex + 1).some((item) => selectedSet.has(String(item._id)));
+  if (!hasLaterSelection) return;
+  const error = new Error('Please clear the earlier pending installment(s) before paying this installment.');
+  error.statusCode = 400;
+  throw error;
+}
+
 function allocateInstallmentPayment(loan, selectedIds, amount) {
   let remaining = roundMoney(amount);
   const selectedSet = new Set((selectedIds || []).map(String));
   const ordered = activeInstallments(loan);
+  validateSequentialInstallments(ordered, selectedSet);
   const preferred = selectedSet.size ? ordered.filter((item) => selectedSet.has(String(item._id))) : ordered;
   const fallback = ordered.filter((item) => !selectedSet.has(String(item._id)));
   const allocations = [];
