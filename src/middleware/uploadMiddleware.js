@@ -10,8 +10,10 @@ const FIELD_SIZE_LIMITS = {
   rcPhoto: MAX_PROOF_FILE_SIZE,
   proof1: MAX_PROOF_FILE_SIZE,
   proof2: MAX_PROOF_FILE_SIZE,
+  proof3: MAX_PROOF_FILE_SIZE,
   guarantorProof1: MAX_PROOF_FILE_SIZE,
   guarantorProof2: MAX_PROOF_FILE_SIZE,
+  guarantorProof3: MAX_PROOF_FILE_SIZE,
   agentProof1: MAX_PROOF_FILE_SIZE,
   agentProof2: MAX_PROOF_FILE_SIZE
 };
@@ -49,7 +51,8 @@ export const uploadBorrowerFiles = multer(uploadOptions()).fields([
   { name: 'photo', maxCount: 1 },
   { name: 'rcPhoto', maxCount: 1 },
   { name: 'proof1', maxCount: 1 },
-  { name: 'proof2', maxCount: 1 }
+  { name: 'proof2', maxCount: 1 },
+  { name: 'proof3', maxCount: 1 }
 ]);
 
 export const uploadAgentFiles = multer(uploadOptions()).fields([
@@ -60,7 +63,8 @@ export const uploadAgentFiles = multer(uploadOptions()).fields([
 export const uploadLoanFiles = multer(uploadOptions()).fields([
   { name: 'rcPhoto', maxCount: 1 },
   { name: 'guarantorProof1', maxCount: 1 },
-  { name: 'guarantorProof2', maxCount: 1 }
+  { name: 'guarantorProof2', maxCount: 1 },
+  { name: 'guarantorProof3', maxCount: 1 }
 ]);
 
 export const validateProofFileSizes = uploadSizeGuard;

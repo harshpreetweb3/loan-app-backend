@@ -85,18 +85,18 @@ export const getDashboard = asyncHandler(async (req, res) => {
     Borrower.countDocuments(isAgent ? { createdBy: req.user._id } : { createdAt: { $gte: rangeStart, $lte: rangeEnd } }),
     Loan.countDocuments({ ...ownerQuery, createdAt: { $gte: rangeStart, $lte: rangeEnd } }),
     Loan.countDocuments({ ...ownerQuery, status: 'active', createdAt: { $gte: rangeStart, $lte: rangeEnd } }),
-    Loan.countDocuments({ ...ownerQuery, status: 'completed', createdAt: { $gte: rangeStart, $lte: rangeEnd } }),
-    Loan.countDocuments({ ...dueOwnerQuery, installments: overdueInstallment }),
-    Loan.countDocuments({ ...dueOwnerQuery, installments: todayInstallment }),
+    Loan.countDocuments({ ...ownerQuery, status: { $in: ['completed', 'settled'] }, createdAt: { $gte: rangeStart, $lte: rangeEnd } }),
+    Loan.countDocuments({ ...dueOwnerQuery, status: 'active', installments: overdueInstallment }),
+    Loan.countDocuments({ ...dueOwnerQuery, status: 'active', installments: todayInstallment }),
     Payment.aggregate([
       { $match: { collectedBy: req.user._id, createdAt: { $gte: todayStart, $lte: todayEnd } } },
       { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
     ]),
-    Loan.find({ ...dueOwnerQuery, installments: todayInstallment })
+    Loan.find({ ...dueOwnerQuery, status: 'active', installments: todayInstallment })
       .populate('borrower')
       .populate('createdBy', 'name username')
       .sort({ createdAt: -1 }),
-    Loan.find({ ...dueOwnerQuery, installments: overdueInstallment }).populate('borrower').populate('createdBy', 'name username').sort({ createdAt: -1 }),
+    Loan.find({ ...dueOwnerQuery, status: 'active', installments: overdueInstallment }).populate('borrower').populate('createdBy', 'name username').sort({ createdAt: -1 }),
     Payment.find({ ...collectionOwnerQuery, createdAt: { $gte: rangeStart, $lte: rangeEnd } }).populate('borrower').populate('collectedBy', 'name username').sort({ createdAt: -1 }).limit(8),
     Payment.aggregate([
       { $match: { ...collectionOwnerQuery, createdAt: { $gte: rangeStart, $lte: rangeEnd } } },
@@ -189,8 +189,8 @@ export const getDueInstallments = asyncHandler(async (_req, res) => {
   };
 
   const [dailyDueLoans, overdueInstallmentLoans] = await Promise.all([
-    Loan.find({ installments: todayInstallment }).populate('borrower').populate('createdBy', 'name username').sort({ createdAt: -1 }),
-    Loan.find({ installments: overdueInstallment }).populate('borrower').populate('createdBy', 'name username').sort({ createdAt: -1 })
+    Loan.find({ status: 'active', installments: todayInstallment }).populate('borrower').populate('createdBy', 'name username').sort({ createdAt: -1 }),
+    Loan.find({ status: 'active', installments: overdueInstallment }).populate('borrower').populate('createdBy', 'name username').sort({ createdAt: -1 })
   ]);
   await applyPenaltiesToLoans([...dailyDueLoans, ...overdueInstallmentLoans]);
 

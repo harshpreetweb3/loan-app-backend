@@ -4,6 +4,7 @@ import {
   generateLoanReceipt,
   generateNoc,
   getLoanClosureStatus,
+  getLatestGuarantor,
   getLoan,
   listLoans,
   requestNoc,
@@ -20,6 +21,7 @@ const router = express.Router();
 
 router.use(protect);
 router.route('/').get(listLoans).post(uploadLoanFiles, validateProofFileSizes, createLoan);
+router.get('/borrowers/:borrowerId/latest-guarantor', getLatestGuarantor);
 router.route('/:id').get(getLoan).put(adminOnly, uploadLoanFiles, validateProofFileSizes, updateLoan);
 router.patch('/:id/installment-type', adminOnly, switchInstallmentType);
 router.post('/:id/receipt', generateLoanReceipt);

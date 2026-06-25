@@ -24,6 +24,16 @@ function penaltyRemaining(item) {
   return Math.max(roundMoney(Number(item.penaltyAmount || 0) - Number(item.penaltyPaidAmount || 0) - Number(item.penaltyWaivedAmount || 0)), 0);
 }
 
+function loanOutstanding(loan) {
+  const installments = loan.installments.filter((item) => !item.convertedAt);
+  const remainingInstallments = installments.reduce((sum, item) => sum + installmentRemaining(item), 0);
+  const pendingPenalties = installments.reduce((sum, item) => sum + penaltyRemaining(item), 0);
+  const pendingProcessingFees = loan.processingFeeMode === 'separate'
+    ? Math.max(roundMoney(Number(loan.processingCharges || 0) - Number(loan.processingFeePaidAmount || 0) - Number(loan.processingFeeWaivedAmount || 0)), 0)
+    : 0;
+  return roundMoney(remainingInstallments + pendingPenalties + pendingProcessingFees);
+}
+
 function updateInstallmentStatus(item) {
   if (installmentRemaining(item) <= 0) {
     item.status = penaltyRemaining(item) <= 0 ? 'paid' : 'overdue';
@@ -110,6 +120,59 @@ function allocatePenaltyPayment(loan, selectedIds, amount) {
   return allocations;
 }
 
+function applySettlement(loan, amount, userId) {
+  if (loan.status !== 'active') {
+    const error = new Error('Only active loans can be settled');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const settledAt = new Date();
+  const originalOutstandingAmount = loanOutstanding(loan);
+  if (originalOutstandingAmount <= 0) {
+    const error = new Error('Loan has no outstanding amount to settle');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (amount > originalOutstandingAmount) {
+    const error = new Error('Settlement amount cannot exceed total outstanding amount');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  loan.installments
+    .filter((item) => !item.convertedAt)
+    .forEach((item) => {
+      const pendingPenalty = penaltyRemaining(item);
+      if (pendingPenalty > 0) item.penaltyWaivedAmount = roundMoney(Number(item.penaltyWaivedAmount || 0) + pendingPenalty);
+      if (installmentRemaining(item) > 0 || pendingPenalty > 0) {
+        item.status = 'paid';
+        item.paidAt = settledAt;
+      }
+    });
+
+  if (loan.processingFeeMode === 'separate') {
+    const pendingProcessingFee = Math.max(roundMoney(Number(loan.processingCharges || 0) - Number(loan.processingFeePaidAmount || 0) - Number(loan.processingFeeWaivedAmount || 0)), 0);
+    if (pendingProcessingFee > 0) loan.processingFeeWaivedAmount = roundMoney(Number(loan.processingFeeWaivedAmount || 0) + pendingProcessingFee);
+  }
+
+  loan.status = 'settled';
+  loan.closure = { closedAt: settledAt, closedBy: userId };
+  loan.settlement = {
+    amount,
+    settledAt,
+    collectedBy: userId,
+    originalOutstandingAmount
+  };
+  if (loan.noc.status === 'none') {
+    loan.noc.status = 'approved';
+    loan.noc.reviewedBy = userId;
+    loan.noc.reviewedAt = settledAt;
+  }
+
+  return [{ type: 'settlement', amount }];
+}
+
 export const createPayment = asyncHandler(async (req, res) => {
   const { loanId, installmentIds = [], mode, notes, chequeNumber, paymentCategory = 'installment' } = req.body;
   const amount = roundMoney(req.body.amount);
@@ -132,11 +195,12 @@ export const createPayment = asyncHandler(async (req, res) => {
     allocations = [{ type: 'processingFee', amount }];
   } else if (paymentCategory === 'penalty') {
     allocations = allocatePenaltyPayment(loan, installmentIds, amount);
+  } else if (paymentCategory === 'settlement') {
+    allocations = applySettlement(loan, amount, req.user._id);
   } else {
     return res.status(400).json({ message: 'Payment category is required' });
   }
   refreshLoanTotals(loan);
-  await loan.save();
 
   const payment = await Payment.create({
     borrower: loan.borrower._id,
@@ -150,6 +214,8 @@ export const createPayment = asyncHandler(async (req, res) => {
     collectedBy: req.user._id,
     notes
   });
+  if (paymentCategory === 'settlement') loan.settlement.payment = payment._id;
+  await loan.save();
 
   res.status(201).json({ payment, loan });
 });

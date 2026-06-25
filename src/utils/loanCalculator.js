@@ -70,7 +70,8 @@ export function refreshLoanTotals(loan) {
   const activeInstallments = loan.installments.filter((item) => !item.convertedAt);
   loan.paidInstallments = activeInstallments.filter((item) => item.status === 'paid').length;
   loan.remainingInstallments = activeInstallments.filter((item) => item.status !== 'paid').length;
-  loan.totalPaid = roundMoney(loan.installments.reduce((sum, item) => sum + (item.paidAmount || 0) + (item.penaltyPaidAmount || 0), 0) + (loan.processingFeePaidAmount || 0));
+  loan.totalPaid = roundMoney(loan.installments.reduce((sum, item) => sum + (item.paidAmount || 0) + (item.penaltyPaidAmount || 0), 0) + (loan.processingFeePaidAmount || 0) + (loan.settlement?.amount || 0));
+  if (loan.status === 'settled') return;
   const pendingProcessingFee = loan.processingFeeMode === 'separate' ? Math.max(Number(loan.processingCharges || 0) - Number(loan.processingFeePaidAmount || 0) - Number(loan.processingFeeWaivedAmount || 0), 0) : 0;
   const pendingPenalty = activeInstallments.reduce((sum, item) => sum + Math.max(Number(item.penaltyAmount || 0) - Number(item.penaltyPaidAmount || 0) - Number(item.penaltyWaivedAmount || 0), 0), 0);
   loan.status = loan.remainingInstallments === 0 && pendingProcessingFee <= 0 && pendingPenalty <= 0 ? 'completed' : 'active';

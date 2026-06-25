@@ -103,9 +103,9 @@ function drawLoanSummaryCards(doc, loan, x, y) {
   const pendingProcessingFee = loan.processingFeeMode === 'separate'
     ? Math.max(Number(loan.processingCharges || 0) - Number(loan.processingFeePaidAmount || 0) - Number(loan.processingFeeWaivedAmount || 0), 0)
     : 0;
-  const pendingInstallments = (loan.installments || []).reduce((sum, item) => sum + Math.max(Number(item.amount || 0) - Number(item.paidAmount || 0), 0), 0);
-  const pendingPenalties = (loan.installments || []).reduce((sum, item) => sum + Math.max(Number(item.penaltyAmount || 0) - Number(item.penaltyPaidAmount || 0) - Number(item.penaltyWaivedAmount || 0), 0), 0);
-  const pendingAmount = Math.max(pendingInstallments + pendingPenalties + pendingProcessingFee, 0);
+  const pendingInstallments = loan.status === 'settled' ? 0 : (loan.installments || []).reduce((sum, item) => sum + Math.max(Number(item.amount || 0) - Number(item.paidAmount || 0), 0), 0);
+  const pendingPenalties = loan.status === 'settled' ? 0 : (loan.installments || []).reduce((sum, item) => sum + Math.max(Number(item.penaltyAmount || 0) - Number(item.penaltyPaidAmount || 0) - Number(item.penaltyWaivedAmount || 0), 0), 0);
+  const pendingAmount = loan.status === 'settled' ? 0 : Math.max(pendingInstallments + pendingPenalties + pendingProcessingFee, 0);
   const processingFees = Math.max(Number(loan.processingCharges || 0) - Number(loan.processingFeeWaivedAmount || 0), 0);
   const firstX = x;
 
@@ -152,7 +152,7 @@ function loanTotalWithPenalty(loan) {
 
 function drawLoanSummaryBreakdown(doc, loan, x, y, width) {
   const totalAmount = loanTotalWithPenalty(loan);
-  const pendingAmount = Math.max(totalAmount - Number(loan.totalPaid || 0), 0);
+  const pendingAmount = loan.status === 'settled' ? 0 : Math.max(totalAmount - Number(loan.totalPaid || 0), 0);
   const rows = [
     ['Loan Amount', money(loan.loanAmount)],
     ['Interest Amount', money(loan.interestAmount)],
@@ -204,13 +204,14 @@ export function generatePaymentReceiptBuffer({ payment, loan, borrower }) {
     sectionTitle(doc, 'Receipt Details', 42, 306);
     drawInfoGrid(doc, [
       ['Receipt Amount', money(payment.amount)],
+      ['Payment Category', payment.paymentCategory],
       ['Receipt Mode', `${payment.mode}${payment.chequeNumber ? ` (${payment.chequeNumber})` : ''}`],
       ['Collected By', payment.collectedBy?.name || payment.collectedBy?.username],
       ['Notes', payment.notes]
     ], 42, 336, 511);
 
-    sectionTitle(doc, 'Loan Summary', 42, 464);
-    drawLoanSummaryCards(doc, loan, 42, 494);
+    sectionTitle(doc, 'Loan Summary', 42, 488);
+    drawLoanSummaryCards(doc, loan, 42, 518);
 
     drawReceiptFooter(doc);
 
@@ -278,7 +279,14 @@ export function generateNocPdfBuffer({ loan, borrower }) {
 
     doc.fontSize(20).text('Satluj Finance', { align: 'center' });
     doc.fontSize(16).text('No Objection Certificate', { align: 'center' }).moveDown(2);
-    doc.fontSize(12).text(`This is to certify that ${borrowerText} has completed all payments for loan ${displayLoanId}.`);
+    if (loan.status === 'settled') {
+      doc.fontSize(12).text(`This is to certify that ${borrowerText} has settled and closed loan ${displayLoanId}.`);
+      doc.moveDown().text(`Original Outstanding Amount: ${money(loan.settlement?.originalOutstandingAmount)}`);
+      doc.text(`Settlement Amount: ${money(loan.settlement?.amount)}`);
+      doc.text(`Settlement Date: ${formatDate(loan.settlement?.settledAt)}`);
+    } else {
+      doc.fontSize(12).text(`This is to certify that ${borrowerText} has completed all payments for loan ${displayLoanId}.`);
+    }
     doc.moveDown().text(`Loan Amount: ${money(loan.loanAmount)}`);
     doc.text(`Total Paid: ${money(loan.totalPaid)}`);
     doc.text(`Completion Date: ${formatDate(new Date())}`);

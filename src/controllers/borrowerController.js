@@ -26,6 +26,7 @@ async function normalizeBorrowerPayload(req) {
   if (req.files?.photo?.[0]) payload.photoPath = await persistUploadedFile(req.files.photo[0]);
   if (req.files?.proof1?.[0]) payload.proof1Path = await persistUploadedFile(req.files.proof1[0]);
   if (req.files?.proof2?.[0]) payload.proof2Path = await persistUploadedFile(req.files.proof2[0]);
+  if (req.files?.proof3?.[0]) payload.proof3Path = await persistUploadedFile(req.files.proof3[0]);
   if (req.files?.rcPhoto?.[0]) payload.vehicle = { ...payload.vehicle, rcPhotoPath: await persistUploadedFile(req.files.rcPhoto[0]) };
   if (!payload.phone && payload.mobileNumbers?.[0]) payload.phone = payload.mobileNumbers[0];
   return payload;
@@ -76,7 +77,7 @@ export const listBorrowers = asyncHandler(async (req, res) => {
   }
   const borrowers = await Borrower.find(query).populate('createdBy', 'name username').sort({ createdAt: -1 });
   const borrowerIds = borrowers.map((borrower) => borrower._id);
-  const activeLoanBorrowerIds = await Loan.find({ borrower: { $in: borrowerIds }, status: { $ne: 'completed' } }).distinct('borrower');
+  const activeLoanBorrowerIds = await Loan.find({ borrower: { $in: borrowerIds }, status: 'active' }).distinct('borrower');
   const activeSet = new Set(activeLoanBorrowerIds.map(String));
   const withStatus = borrowers
     .map((borrower) => ({ ...borrower.toObject(), loanStatus: activeSet.has(String(borrower._id)) ? 'active' : 'inactive' }))
@@ -102,7 +103,7 @@ export const updateBorrower = asyncHandler(async (req, res) => {
   const nextPayload = { ...borrower.toObject(), ...payload };
   const errors = validateBorrowerPayload(nextPayload);
   if (errors.length) return res.status(400).json({ message: errors[0], errors });
-  const fields = ['name', 'fatherOrCareOf', 'address', 'phone', 'mobileNumbers', 'photoPath', 'proof1Path', 'proof2Path', 'vehicle', 'bank'];
+  const fields = ['name', 'fatherOrCareOf', 'address', 'phone', 'mobileNumbers', 'photoPath', 'proof1Path', 'proof2Path', 'proof3Path', 'vehicle', 'bank'];
   const changes = buildChanges(borrower, payload, fields);
   fields.forEach((field) => {
     if (payload[field] !== undefined) borrower[field] = payload[field];

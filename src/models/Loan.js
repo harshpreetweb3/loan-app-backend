@@ -40,7 +40,8 @@ const loanSchema = new mongoose.Schema(
       phone: String,
       address: String,
       proof1Path: String,
-      proof2Path: String
+      proof2Path: String,
+      proof3Path: String
     },
     vehicle: {
       rcPhotoPath: String,
@@ -68,7 +69,7 @@ const loanSchema = new mongoose.Schema(
     totalInstallments: { type: Number, required: true },
     paidInstallments: { type: Number, default: 0 },
     remainingInstallments: { type: Number, required: true },
-    status: { type: String, enum: ['active', 'completed', 'defaulted'], default: 'active' },
+    status: { type: String, enum: ['active', 'completed', 'settled', 'defaulted'], default: 'active' },
     receipt: {
       receiptNumber: { type: String, unique: true, sparse: true },
       generatedAt: Date
@@ -87,6 +88,13 @@ const loanSchema = new mongoose.Schema(
     closure: {
       closedAt: Date,
       closedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
+    },
+    settlement: {
+      amount: { type: Number, default: 0 },
+      settledAt: Date,
+      collectedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+      originalOutstandingAmount: { type: Number, default: 0 },
+      payment: { type: mongoose.Schema.Types.ObjectId, ref: 'Payment' }
     },
     penaltyWaivers: [{
       installmentId: mongoose.Schema.Types.ObjectId,

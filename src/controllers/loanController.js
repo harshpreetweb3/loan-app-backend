@@ -31,6 +31,14 @@ function isUnpaidOverdueInstallment(installment, todayStart) {
 }
 
 function loanOutstanding(loan) {
+  if (loan.status === 'settled') {
+    return {
+      remainingInstallments: 0,
+      pendingPenalties: 0,
+      pendingProcessingFees: 0,
+      remainingDueAmount: 0
+    };
+  }
   const activeInstallments = loan.installments.filter((item) => !item.convertedAt);
   const remainingInstallments = activeInstallments.reduce((sum, item) => sum + Math.max(Number(item.amount || 0) - Number(item.paidAmount || 0), 0), 0);
   const pendingPenalties = activeInstallments.reduce((sum, item) => sum + Math.max(Number(item.penaltyAmount || 0) - Number(item.penaltyPaidAmount || 0) - Number(item.penaltyWaivedAmount || 0), 0), 0);
@@ -84,6 +92,7 @@ async function normalizeLoanPayload(req, existing = {}) {
   payload.vehicle = { ...(existing.vehicle || {}), ...parseJsonField(payload.vehicle, {}) };
   if (req.files?.guarantorProof1?.[0]) payload.guarantor.proof1Path = await persistUploadedFile(req.files.guarantorProof1[0]);
   if (req.files?.guarantorProof2?.[0]) payload.guarantor.proof2Path = await persistUploadedFile(req.files.guarantorProof2[0]);
+  if (req.files?.guarantorProof3?.[0]) payload.guarantor.proof3Path = await persistUploadedFile(req.files.guarantorProof3[0]);
   if (req.files?.rcPhoto?.[0]) payload.vehicle.rcPhotoPath = await persistUploadedFile(req.files.rcPhoto[0]);
   return payload;
 }
@@ -113,6 +122,7 @@ export const listLoans = asyncHandler(async (req, res) => {
   if (req.query.scope === 'mine') query.createdBy = req.user._id;
   if (req.query.status && req.query.status !== 'overdue') query.status = req.query.status;
   if (req.query.status === 'overdue') {
+    query.status = 'active';
     query.installments = {
       $elemMatch: {
         convertedAt: null,
@@ -159,6 +169,15 @@ export const getLoan = asyncHandler(async (req, res) => {
   res.json({ loan });
 });
 
+export const getLatestGuarantor = asyncHandler(async (req, res) => {
+  const borrower = await Borrower.findById(req.params.borrowerId).select('_id');
+  if (!borrower) return res.status(404).json({ message: 'Borrower not found' });
+  const loan = await Loan.findOne({ borrower: borrower._id, 'guarantor.name': { $exists: true, $ne: '' } })
+    .sort({ createdAt: -1 })
+    .select('guarantor');
+  res.json({ guarantor: loan?.guarantor || null });
+});
+
 export const updateLoan = asyncHandler(async (req, res) => {
   const loan = await Loan.findById(req.params.id);
   if (!loan) return res.status(404).json({ message: 'Loan not found' });
@@ -169,8 +188,13 @@ export const updateLoan = asyncHandler(async (req, res) => {
   const fields = ['loanAmount', 'interestPercent', 'interestAmount', 'chequeNumber', 'duration', 'installmentType', 'processingCharges', 'startDate', 'dateOfFinance', 'dueDayOfMonth', 'loanCategory', 'guarantor', 'vehicle'];
   const changes = buildChanges(loan, payload, fields);
   if (changes.length) {
-    const schedule = calculateLoanSchedule(nextPayload);
-    Object.assign(loan, payload, { installmentCountMode: 'manual' }, schedule);
+    const scheduleFields = new Set(['loanAmount', 'interestPercent', 'interestAmount', 'duration', 'installmentType', 'processingCharges', 'startDate', 'dateOfFinance', 'dueDayOfMonth']);
+    if (changes.some((change) => scheduleFields.has(change.field))) {
+      const schedule = calculateLoanSchedule(nextPayload);
+      Object.assign(loan, payload, { installmentCountMode: 'manual' }, schedule);
+    } else {
+      Object.assign(loan, payload, { installmentCountMode: 'manual' });
+    }
   }
   await loan.save();
   await writeAudit({ entity: 'Loan', entityId: loan._id, action: 'admin_update', changes, admin: req.user._id });
@@ -262,7 +286,7 @@ export const switchInstallmentType = asyncHandler(async (req, res) => {
 export const requestNoc = asyncHandler(async (req, res) => {
   const loan = await Loan.findById(req.params.id);
   if (!loan) return res.status(404).json({ message: 'Loan not found' });
-  if (loan.status !== 'completed') return res.status(400).json({ message: 'Loan must be completed before NOC request' });
+  if (!['completed', 'settled'].includes(loan.status)) return res.status(400).json({ message: 'Loan must be completed or settled before NOC request' });
   loan.noc = { ...loan.noc, status: 'requested', requestedBy: req.user._id, requestedAt: new Date() };
   await loan.save();
   res.json({ loan });
@@ -299,7 +323,7 @@ export const closeLoan = asyncHandler(async (req, res) => {
   if (outstanding.remainingDueAmount > 0) {
     return res.status(400).json({ message: 'Loan cannot be closed while amounts are pending', outstanding });
   }
-  loan.status = 'completed';
+  if (loan.status !== 'settled') loan.status = 'completed';
   loan.closure = { closedAt: new Date(), closedBy: req.user._id };
   if (loan.noc.status === 'none') {
     loan.noc.status = 'approved';
