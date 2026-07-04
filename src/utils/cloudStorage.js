@@ -8,14 +8,14 @@ function cloudinaryConfigured() {
 }
 
 function uploadFolder(fieldname) {
-  if (fieldname === 'rcPhoto') return 'loan-app/rc';
+  if (fieldname.startsWith('rcPhoto')) return 'loan-app/rc';
   if (fieldname.startsWith('agentProof')) return 'loan-app/agent-proofs';
   if (fieldname.toLowerCase().includes('proof')) return 'loan-app/proofs';
   return 'loan-app/borrowers';
 }
 
 function localDirectory(fieldname) {
-  if (fieldname === 'rcPhoto') return rcPhotoDir;
+  if (fieldname.startsWith('rcPhoto')) return rcPhotoDir;
   if (fieldname.startsWith('agentProof')) return agentProofDir;
   if (fieldname.toLowerCase().includes('proof')) return proofDir;
   return borrowerPhotoDir;

@@ -8,6 +8,8 @@ const UPLOAD_SIZE_MESSAGE = 'Uploads must be 300 KB or smaller';
 const FIELD_SIZE_LIMITS = {
   photo: MAX_BORROWER_PHOTO_SIZE,
   rcPhoto: MAX_PROOF_FILE_SIZE,
+  rcPhoto1: MAX_PROOF_FILE_SIZE,
+  rcPhoto2: MAX_PROOF_FILE_SIZE,
   proof1: MAX_PROOF_FILE_SIZE,
   proof2: MAX_PROOF_FILE_SIZE,
   proof3: MAX_PROOF_FILE_SIZE,
@@ -62,6 +64,8 @@ export const uploadAgentFiles = multer(uploadOptions()).fields([
 
 export const uploadLoanFiles = multer(uploadOptions()).fields([
   { name: 'rcPhoto', maxCount: 1 },
+  { name: 'rcPhoto1', maxCount: 1 },
+  { name: 'rcPhoto2', maxCount: 1 },
   { name: 'guarantorProof1', maxCount: 1 },
   { name: 'guarantorProof2', maxCount: 1 },
   { name: 'guarantorProof3', maxCount: 1 }

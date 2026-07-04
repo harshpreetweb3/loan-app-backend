@@ -45,6 +45,8 @@ const loanSchema = new mongoose.Schema(
     },
     vehicle: {
       rcPhotoPath: String,
+      rcPhoto1Path: String,
+      rcPhoto2Path: String,
       nameOnRc: String,
       rcRegisteredNumber: String,
       modelNumber: String

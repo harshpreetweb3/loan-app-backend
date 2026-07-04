@@ -68,7 +68,7 @@ function validateLoanPayload(payload) {
   if (!payload.guarantor?.address) errors.push('Guarantor address is required');
   if (!payload.guarantor?.proof1Path) errors.push('Guarantor proof 1 is required');
   if (payload.loanCategory === 'vehicle') {
-    if (!payload.vehicle?.rcPhotoPath) errors.push('Vehicle RC photo is required');
+    if (!payload.vehicle?.rcPhoto1Path && !payload.vehicle?.rcPhotoPath) errors.push('Vehicle RC photo 1 is required');
     if (!payload.vehicle?.nameOnRc) errors.push('Name on RC is required');
     if (!payload.vehicle?.rcRegisteredNumber) errors.push('RC registered number is required');
     if (!payload.vehicle?.modelNumber) errors.push('Vehicle model number is required');
@@ -94,6 +94,8 @@ async function normalizeLoanPayload(req, existing = {}) {
   if (req.files?.guarantorProof2?.[0]) payload.guarantor.proof2Path = await persistUploadedFile(req.files.guarantorProof2[0]);
   if (req.files?.guarantorProof3?.[0]) payload.guarantor.proof3Path = await persistUploadedFile(req.files.guarantorProof3[0]);
   if (req.files?.rcPhoto?.[0]) payload.vehicle.rcPhotoPath = await persistUploadedFile(req.files.rcPhoto[0]);
+  if (req.files?.rcPhoto1?.[0]) payload.vehicle.rcPhoto1Path = await persistUploadedFile(req.files.rcPhoto1[0]);
+  if (req.files?.rcPhoto2?.[0]) payload.vehicle.rcPhoto2Path = await persistUploadedFile(req.files.rcPhoto2[0]);
   return payload;
 }
 
