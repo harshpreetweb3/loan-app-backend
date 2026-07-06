@@ -42,7 +42,8 @@ export function buildInstallmentSchedule({ totalPayable, duration, installmentTy
 
 export function calculateLoanSchedule({ loanAmount, interestPercent, interestAmount, duration, installmentType, startDate, dateOfFinance, processingCharges = 0, processingFeeMode = 'separate', dueDayOfMonth }) {
   const principal = Number(loanAmount);
-  const interest = (principal * Number(interestPercent || 0) * Number(duration || 0)) / 100;
+  const calculatedInterest = (principal * Number(interestPercent || 0) * Number(duration || 0)) / 100;
+  const interest = interestAmount !== undefined && interestAmount !== '' ? Number(interestAmount || 0) : calculatedInterest;
   const percent = Number(interestPercent || 0);
   const includedProcessingCharges = processingFeeMode === 'separate' ? 0 : Number(processingCharges || 0);
   const totalPayable = roundMoney(principal + interest + includedProcessingCharges);

@@ -1,5 +1,6 @@
 import Loan from '../models/Loan.js';
 import Payment from '../models/Payment.js';
+import { ROLES } from '../constants.js';
 import { generatePaymentReceiptBuffer } from '../services/pdfService.js';
 import { buildChanges, writeAudit } from '../utils/audit.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
@@ -175,6 +176,7 @@ function applySettlement(loan, amount, userId) {
 
 export const createPayment = asyncHandler(async (req, res) => {
   const { loanId, installmentIds = [], mode, notes, chequeNumber, paymentCategory = 'installment' } = req.body;
+  if (paymentCategory === 'settlement' && req.user.role !== ROLES.ADMIN) return res.status(403).json({ message: 'Admin access required' });
   const amount = roundMoney(req.body.amount);
   if (!amount || amount <= 0) return res.status(400).json({ message: 'Receipt amount is required' });
   if (mode === 'cheque' && !String(chequeNumber || '').trim()) return res.status(400).json({ message: 'Cheque number is required' });
@@ -222,6 +224,7 @@ export const createPayment = asyncHandler(async (req, res) => {
 
 export const listPayments = asyncHandler(async (req, res) => {
   const query = {};
+  if (req.user.role !== ROLES.ADMIN) query.paymentCategory = { $ne: 'settlement' };
   if (req.query.scope === 'mine') query.collectedBy = req.user._id;
   if (req.query.agent) query.collectedBy = req.query.agent;
   if (req.query.borrower) query.borrower = req.query.borrower;
@@ -272,6 +275,7 @@ export const updatePayment = asyncHandler(async (req, res) => {
 export const generateReceipt = asyncHandler(async (req, res) => {
   const payment = await Payment.findById(req.params.id).populate('loan').populate('borrower').populate('collectedBy', 'name username');
   if (!payment) return res.status(404).json({ message: 'Payment not found' });
+  if (payment.paymentCategory === 'settlement' && req.user.role !== ROLES.ADMIN) return res.status(403).json({ message: 'Admin access required' });
   const pdf = await generatePaymentReceiptBuffer({ payment, loan: payment.loan, borrower: payment.borrower });
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `inline; filename="receipt-${payment._id}.pdf"`);

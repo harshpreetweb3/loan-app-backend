@@ -180,6 +180,15 @@ export const getLatestGuarantor = asyncHandler(async (req, res) => {
   res.json({ guarantor: loan?.guarantor || null });
 });
 
+export const getLatestLoanDetails = asyncHandler(async (req, res) => {
+  const borrower = await Borrower.findById(req.params.borrowerId).select('_id');
+  if (!borrower) return res.status(404).json({ message: 'Borrower not found' });
+  const loan = await Loan.findOne({ borrower: borrower._id })
+    .sort({ createdAt: -1 })
+    .select('loanCategory chequeNumber processingCharges interestPercent installmentType dueDayOfMonth guarantor vehicle');
+  res.json({ loan: loan || null });
+});
+
 export const updateLoan = asyncHandler(async (req, res) => {
   const loan = await Loan.findById(req.params.id);
   if (!loan) return res.status(404).json({ message: 'Loan not found' });
