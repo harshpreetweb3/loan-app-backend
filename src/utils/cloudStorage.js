@@ -67,5 +67,10 @@ async function saveLocalFallback(file) {
 export async function persistUploadedFile(file) {
   if (!file) return undefined;
   if (cloudinaryConfigured()) return uploadToCloudinary(file);
+  if (process.env.VERCEL || process.env.NODE_ENV === 'production') {
+    const error = new Error('Cloudinary storage must be configured for uploads in production');
+    error.statusCode = 503;
+    throw error;
+  }
   return saveLocalFallback(file);
 }
