@@ -9,6 +9,7 @@ import noteRoutes from './noteRoutes.js';
 import notificationRoutes from './notificationRoutes.js';
 import paymentRoutes from './paymentRoutes.js';
 import settingsRoutes from './settingsRoutes.js';
+import whatsAppRoutes from './whatsAppRoutes.js';
 
 const router = express.Router();
 
@@ -22,5 +23,6 @@ router.use('/cron', cronRoutes);
 router.use('/settings', settingsRoutes);
 router.use('/notifications', notificationRoutes);
 router.use('/audit-logs', auditRoutes);
+router.use('/whatsapp', whatsAppRoutes);
 
 export default router;

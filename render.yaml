@@ -1,0 +1,74 @@
+services:
+  - type: web
+    name: loan-app-api-test
+    runtime: node
+    branch: message-service
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      - key: FRONTEND_URL
+        sync: false
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+      - key: META_WHATSAPP_ACCESS_TOKEN
+        sync: false
+      - key: META_WHATSAPP_PHONE_NUMBER_ID
+        sync: false
+      - key: META_WHATSAPP_API_VERSION
+        sync: false
+      - key: META_WHATSAPP_VERIFY_TOKEN
+        sync: false
+      - key: META_WHATSAPP_APP_SECRET
+        sync: false
+      - key: WHATSAPP_TEMPLATE_LANGUAGE
+        value: en_US
+      - key: WHATSAPP_DUE_REMINDER_TEMPLATE
+        sync: false
+      - key: WHATSAPP_OVERDUE_REMINDER_TEMPLATE
+        sync: false
+      - key: WHATSAPP_OVERDUE_REMINDER_INTERVAL_DAYS
+        value: "3"
+
+  - type: cron
+    name: loan-app-daily-due-reminders-test
+    runtime: node
+    branch: message-service
+    schedule: "35 18 * * *"
+    buildCommand: npm ci
+    startCommand: npm run cron:daily-due-check
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGODB_URI
+        sync: false
+      - key: PENALTY_PERCENT
+        value: "4"
+      - key: GRACE_PERIOD_DAYS
+        value: "10"
+      - key: META_WHATSAPP_ACCESS_TOKEN
+        sync: false
+      - key: META_WHATSAPP_PHONE_NUMBER_ID
+        sync: false
+      - key: META_WHATSAPP_API_VERSION
+        sync: false
+      - key: WHATSAPP_TEMPLATE_LANGUAGE
+        value: en_US
+      - key: WHATSAPP_DUE_REMINDER_TEMPLATE
+        sync: false
+      - key: WHATSAPP_OVERDUE_REMINDER_TEMPLATE
+        sync: false
+      - key: WHATSAPP_OVERDUE_REMINDER_INTERVAL_DAYS
+        value: "3"

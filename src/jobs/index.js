@@ -11,6 +11,7 @@ import Notification from '../models/Notification.js';
 import Setting from '../models/Setting.js';
 import User from '../models/User.js';
 import { ROLES } from '../constants.js';
+import { sendInstallmentReminder } from '../services/whatsAppService.js';
 
 const execFileAsync = promisify(execFile);
 const deflateRawAsync = promisify(zlib.deflateRaw);
@@ -194,6 +195,8 @@ export async function runDailyDueCheck() {
           title: 'Installment due today',
           message: `${loan.borrower.name} has installment #${installment.sequence} due today.`
         })));
+        await sendInstallmentReminder({ loan, installment, kind: 'due_reminder', scheduledFor: today })
+          .catch((error) => console.error('WhatsApp due reminder failed', error.message));
       }
 
       if (today > due) {
@@ -205,6 +208,12 @@ export async function runDailyDueCheck() {
           title: 'Installment overdue',
           message: `${loan.borrower.name} has overdue installment #${installment.sequence}.`
         })));
+        const overdueDays = Math.floor((today.getTime() - due.getTime()) / MS_PER_DAY);
+        const intervalDays = Math.max(Number(process.env.WHATSAPP_OVERDUE_REMINDER_INTERVAL_DAYS || 3), 1);
+        if (overdueDays % intervalDays === 0) {
+          await sendInstallmentReminder({ loan, installment, kind: 'overdue_reminder', scheduledFor: today })
+            .catch((error) => console.error('WhatsApp overdue reminder failed', error.message));
+        }
       }
 
       if (today > graceEnds && installment.status !== 'overdue') {

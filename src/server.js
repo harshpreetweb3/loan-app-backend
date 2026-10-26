@@ -11,9 +11,9 @@ const port = process.env.PORT || 5000;
 await ensureStorage();
 await connectDB();
 
-// Vercel invokes the serverless handler per request. Its Cron service calls the
-// protected HTTP endpoint instead of starting an in-process scheduler.
-if (!process.env.VERCEL) startCronJobs();
+// Managed hosts invoke scheduled work separately. Keeping the scheduler out of
+// web instances avoids duplicate reminders when a service scales or restarts.
+if (!process.env.VERCEL && !process.env.RENDER) startCronJobs();
 
 app.listen(port, () => {
   console.log(`Loan API running on port ${port}`);

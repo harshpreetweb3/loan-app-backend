@@ -15,7 +15,13 @@ const app = express();
 
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 app.use(cors({ origin: process.env.FRONTEND_URL?.split(',') || '*', credentials: true }));
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({
+  limit: '2mb',
+  verify(req, _res, buffer) {
+    // Meta signs the exact request bytes, so retain them for webhook validation.
+    req.rawBody = buffer;
+  }
+}));
 app.use(morgan('dev'));
 app.use('/uploads', express.static(uploadRoot));
 

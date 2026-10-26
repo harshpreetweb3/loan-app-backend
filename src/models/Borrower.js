@@ -8,6 +8,8 @@ const borrowerSchema = new mongoose.Schema(
     fatherOrCareOf: { type: String, trim: true },
     address: { type: String, required: true, trim: true },
     phone: { type: String, trim: true },
+    whatsappOptIn: { type: Boolean, default: false },
+    whatsappOptInAt: Date,
     mobileNumbers: {
       type: [String],
       validate: {
